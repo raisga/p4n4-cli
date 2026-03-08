@@ -11,6 +11,7 @@
 - [Overview](#overview)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Local Development](#local-development)
 - [Quick Start](#quick-start)
 - [Project Structure](#project-structure)
 - [Commands](#commands)
@@ -104,6 +105,57 @@ To uninstall:
 
 ```bash
 pipx uninstall p4n4
+```
+
+---
+
+## Local Development
+
+### 1. Clone and navigate to the repo
+
+```bash
+git clone https://github.com/raisga/p4n4-cli.git
+cd p4n4-cli
+```
+
+### 2. Create and activate the virtual environment
+
+```bash
+uv venv                        # creates .venv/ (skip if already exists)
+source .venv/bin/activate
+```
+
+### 3. Install in editable mode
+
+```bash
+uv pip install -e ".[dev]"
+```
+
+The `[dev]` extra pulls in `pytest` and `ruff`. Omit it if you only need the CLI.
+
+### 4. Run the CLI
+
+```bash
+p4n4 --help
+p4n4 --version
+```
+
+Or without activating the venv:
+
+```bash
+.venv/bin/p4n4 --help
+```
+
+### 5. Run the tests
+
+```bash
+pytest tests/ -v
+```
+
+### 6. Run the linter
+
+```bash
+ruff check .
 ```
 
 ---
