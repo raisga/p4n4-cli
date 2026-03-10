@@ -1,0 +1,53 @@
+# ==============================================================================
+# Mosquitto ACL File — Example
+# ==============================================================================
+# Access Control List for MQTT topic authorization.
+# Save as 'acl' (no .example extension) and reference in mosquitto.conf:
+#
+#   acl_file /mosquitto/config/acl
+#
+# Mount in docker-compose.yml:
+#   - ./config/mosquitto/acl:/mosquitto/config/acl:ro
+#
+# Topic convention: {site}/{device_type}/{device_id}/{measurement}
+#   e.g.  factory/temp_sensor/T001/celsius
+#         factory/humidity_sensor/H001/percent
+#
+# Permission levels:
+#   read     - subscribe only
+#   write    - publish only
+#   readwrite - both
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Node-RED service account — full access to all IoT topics
+# ------------------------------------------------------------------------------
+user node-red
+topic readwrite sensors/#
+topic readwrite inference/#
+topic readwrite sandbox/#
+topic readwrite +/+/+/#
+
+# ------------------------------------------------------------------------------
+# IoT device accounts — write sensor data, read commands
+# ------------------------------------------------------------------------------
+# Generic device pattern (replace with per-device accounts in production)
+user iot-device-001
+topic write sensors/+/+/+
+topic write +/+/iot-device-001/#
+topic read commands/iot-device-001/#
+
+# ------------------------------------------------------------------------------
+# Read-only monitoring account (e.g. for dashboards / external tools)
+# ------------------------------------------------------------------------------
+user monitor
+topic read sensors/#
+topic read inference/#
+topic read +/+/+/#
+topic read $SYS/#
+
+# ------------------------------------------------------------------------------
+# Sandbox — unrestricted for development
+# ------------------------------------------------------------------------------
+user sandbox
+topic readwrite sandbox/#

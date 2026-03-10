@@ -1,0 +1,254 @@
+[
+    {
+        "id": "tab-pipeline",
+        "type": "tab",
+        "label": "MING IoT Pipeline",
+        "disabled": false,
+        "info": "Routes MQTT data to InfluxDB.\n- Production: sensors/* and inference/* → 'raw_telemetry' bucket (30d)\n- Sandbox: sandbox/* → 'sandbox' bucket\n\nUses InfluxDB Line Protocol via HTTP API (no contrib nodes needed).\nRequires INFLUXDB_TOKEN env var in Node-RED container."
+    },
+    {
+        "id": "mqtt-broker",
+        "type": "mqtt-broker",
+        "name": "Mosquitto",
+        "broker": "mqtt",
+        "port": "1883",
+        "clientid": "node-red",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": "4",
+        "keepalive": "60",
+        "cleansession": true,
+        "birthTopic": "",
+        "closeTopic": "",
+        "willTopic": "",
+        "birthQos": "0",
+        "closeQos": "0",
+        "willQos": "0",
+        "birthPayload": "",
+        "closePayload": "",
+        "willPayload": "",
+        "birthRetain": "false",
+        "closeRetain": "false",
+        "willRetain": "false",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "comment-production",
+        "type": "comment",
+        "z": "tab-pipeline",
+        "name": "Production Pipeline → raw_telemetry bucket",
+        "info": "Routes sensors/* and inference/* topics to the 'raw_telemetry' InfluxDB bucket (30d retention).\nData is formatted as InfluxDB Line Protocol and sent via HTTP API.",
+        "x": 200,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "mqtt-sensors",
+        "type": "mqtt in",
+        "z": "tab-pipeline",
+        "name": "sensors/#",
+        "topic": "sensors/#",
+        "qos": "0",
+        "datatype": "utf8",
+        "broker": "mqtt-broker",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 120,
+        "y": 100,
+        "wires": [
+            ["json-production"]
+        ]
+    },
+    {
+        "id": "mqtt-inference",
+        "type": "mqtt in",
+        "z": "tab-pipeline",
+        "name": "inference/#",
+        "topic": "inference/#",
+        "qos": "0",
+        "datatype": "utf8",
+        "broker": "mqtt-broker",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 120,
+        "y": 180,
+        "wires": [
+            ["json-production"]
+        ]
+    },
+    {
+        "id": "json-production",
+        "type": "json",
+        "z": "tab-pipeline",
+        "name": "Parse JSON",
+        "property": "payload",
+        "action": "obj",
+        "pretty": false,
+        "x": 310,
+        "y": 140,
+        "wires": [
+            ["func-format-iot"]
+        ]
+    },
+    {
+        "id": "func-format-iot",
+        "type": "function",
+        "z": "tab-pipeline",
+        "name": "Format for InfluxDB (iot)",
+        "func": "try {\n    var token = env.get(\"INFLUXDB_TOKEN\");\n    if (!token) {\n        node.error(\"INFLUXDB_TOKEN env var not set\", msg);\n        return null;\n    }\n\n    var topic = msg.topic || \"\";\n    var data = msg.payload;\n    if (!data || typeof data !== \"object\") {\n        node.warn(\"Invalid payload: expected object, got \" + typeof data);\n        return null;\n    }\n\n    var measurement, tags = [], fields = [];\n\n    if (topic.startsWith(\"sensors/\")) {\n        measurement = \"sensor_data\";\n    } else if (topic.startsWith(\"inference/\")) {\n        measurement = \"inference\";\n    } else {\n        node.warn(\"Unknown topic: \" + topic);\n        return null;\n    }\n\n    for (var key in data) {\n        var val = data[key];\n        if (key === \"device\" || key === \"model\") {\n            tags.push(key + \"=\" + val);\n        } else if (typeof val === \"number\") {\n            fields.push(key + \"=\" + val);\n        } else if (typeof val === \"string\") {\n            fields.push(key + '=\"' + val + '\"');\n        } else if (typeof val === \"boolean\") {\n            fields.push(key + \"=\" + (val ? \"true\" : \"false\"));\n        }\n    }\n\n    if (fields.length === 0) return null;\n\n    var line = measurement;\n    if (tags.length > 0) line += \",\" + tags.join(\",\");\n    line += \" \" + fields.join(\",\");\n\n    msg.payload = line;\n    msg.headers = {\n        \"Authorization\": \"Token \" + token,\n        \"Content-Type\": \"text/plain\"\n    };\n\n    return msg;\n} catch (err) {\n    node.error(\"Format error: \" + err.message, msg);\n    return null;\n}",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 530,
+        "y": 140,
+        "wires": [
+            ["http-write-iot"]
+        ]
+    },
+    {
+        "id": "http-write-iot",
+        "type": "http request",
+        "z": "tab-pipeline",
+        "name": "Write to raw_telemetry bucket",
+        "method": "POST",
+        "ret": "txt",
+        "paytoqs": "ignore",
+        "url": "http://influxdb:8086/api/v2/write?org=ming&bucket=raw_telemetry&precision=ms",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 770,
+        "y": 140,
+        "wires": [
+            ["debug-production"]
+        ]
+    },
+    {
+        "id": "debug-production",
+        "type": "debug",
+        "z": "tab-pipeline",
+        "name": "Production writes",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "statusCode",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 980,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "comment-sandbox",
+        "type": "comment",
+        "z": "tab-pipeline",
+        "name": "Sandbox Pipeline → sandbox bucket",
+        "info": "Routes sandbox/* topics to the 'sandbox' InfluxDB bucket.\nStrips 'sandbox/' prefix before determining measurement type.\nUse 'make test-sandbox' to publish test data.",
+        "x": 210,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "mqtt-sandbox",
+        "type": "mqtt in",
+        "z": "tab-pipeline",
+        "name": "sandbox/#",
+        "topic": "sandbox/#",
+        "qos": "0",
+        "datatype": "utf8",
+        "broker": "mqtt-broker",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 120,
+        "y": 340,
+        "wires": [
+            ["json-sandbox"]
+        ]
+    },
+    {
+        "id": "json-sandbox",
+        "type": "json",
+        "z": "tab-pipeline",
+        "name": "Parse JSON",
+        "property": "payload",
+        "action": "obj",
+        "pretty": false,
+        "x": 310,
+        "y": 340,
+        "wires": [
+            ["func-format-sandbox"]
+        ]
+    },
+    {
+        "id": "func-format-sandbox",
+        "type": "function",
+        "z": "tab-pipeline",
+        "name": "Format for InfluxDB (sandbox)",
+        "func": "try {\n    var token = env.get(\"INFLUXDB_TOKEN\");\n    if (!token) {\n        node.error(\"INFLUXDB_TOKEN env var not set\", msg);\n        return null;\n    }\n\n    var topic = (msg.topic || \"\").replace(/^sandbox\\//, \"\");\n    var data = msg.payload;\n    if (!data || typeof data !== \"object\") {\n        node.warn(\"Invalid payload: expected object, got \" + typeof data);\n        return null;\n    }\n\n    var measurement, tags = [], fields = [];\n\n    if (topic.startsWith(\"sensors/\")) {\n        measurement = \"sensor_data\";\n    } else if (topic.startsWith(\"inference/\")) {\n        measurement = \"inference\";\n    } else {\n        node.warn(\"Unknown sandbox topic: \" + msg.topic);\n        return null;\n    }\n\n    delete data.sandbox;\n\n    for (var key in data) {\n        var val = data[key];\n        if (key === \"device\" || key === \"model\") {\n            tags.push(key + \"=\" + val);\n        } else if (typeof val === \"number\") {\n            fields.push(key + \"=\" + val);\n        } else if (typeof val === \"string\") {\n            fields.push(key + '=\"' + val + '\"');\n        } else if (typeof val === \"boolean\") {\n            fields.push(key + \"=\" + (val ? \"true\" : \"false\"));\n        }\n    }\n\n    if (fields.length === 0) return null;\n\n    var line = measurement;\n    if (tags.length > 0) line += \",\" + tags.join(\",\");\n    line += \" \" + fields.join(\",\");\n\n    msg.payload = line;\n    msg.headers = {\n        \"Authorization\": \"Token \" + token,\n        \"Content-Type\": \"text/plain\"\n    };\n\n    return msg;\n} catch (err) {\n    node.error(\"Format error: \" + err.message, msg);\n    return null;\n}",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 540,
+        "y": 340,
+        "wires": [
+            ["http-write-sandbox"]
+        ]
+    },
+    {
+        "id": "http-write-sandbox",
+        "type": "http request",
+        "z": "tab-pipeline",
+        "name": "Write to sandbox bucket",
+        "method": "POST",
+        "ret": "txt",
+        "paytoqs": "ignore",
+        "url": "http://influxdb:8086/api/v2/write?org=ming&bucket=sandbox&precision=ms",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 790,
+        "y": 340,
+        "wires": [
+            ["debug-sandbox"]
+        ]
+    },
+    {
+        "id": "debug-sandbox",
+        "type": "debug",
+        "z": "tab-pipeline",
+        "name": "Sandbox writes",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "statusCode",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 980,
+        "y": 340,
+        "wires": []
+    }
+]

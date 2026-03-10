@@ -1,0 +1,85 @@
+# ==============================================================================
+# Grafana Datasources Provisioning
+# ==============================================================================
+# Env vars (INFLUXDB_TOKEN, INFLUXDB_ORG) are injected by docker-compose.yml
+# and expanded by Grafana at startup.
+# ==============================================================================
+
+apiVersion: 1
+
+datasources:
+
+  # Primary bucket — all inbound sensor readings (30d)
+  - name: InfluxDB
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: $INFLUXDB_ORG
+      defaultBucket: raw_telemetry
+      tlsSkipVerify: true
+    secureJsonData:
+      token: $INFLUXDB_TOKEN
+    isDefault: true
+    editable: true
+
+  # Downsampled / aggregated metrics (365d)
+  - name: InfluxDB-Processed
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: $INFLUXDB_ORG
+      defaultBucket: processed_metrics
+      tlsSkipVerify: true
+    secureJsonData:
+      token: $INFLUXDB_TOKEN
+    isDefault: false
+    editable: true
+
+  # AI-generated annotations, anomaly flags, agent logs (infinite)
+  - name: InfluxDB-AI-Events
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: $INFLUXDB_ORG
+      defaultBucket: ai_events
+      tlsSkipVerify: true
+    secureJsonData:
+      token: $INFLUXDB_TOKEN
+    isDefault: false
+    editable: true
+
+  # Stack component health metrics (7d)
+  - name: InfluxDB-Health
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: $INFLUXDB_ORG
+      defaultBucket: system_health
+      tlsSkipVerify: true
+    secureJsonData:
+      token: $INFLUXDB_TOKEN
+    isDefault: false
+    editable: true
+
+  # Sandbox for development/testing
+  - name: InfluxDB-Sandbox
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: $INFLUXDB_ORG
+      defaultBucket: sandbox
+      tlsSkipVerify: true
+    secureJsonData:
+      token: $INFLUXDB_TOKEN
+    isDefault: false
+    editable: true

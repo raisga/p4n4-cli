@@ -1,0 +1,148 @@
+services:
+
+  # ====================================================================================
+  # MING STACK
+  # ====================================================================================
+
+  # ------------------------------------------------------------------------------------
+  # MQTT Broker (Eclipse Mosquitto)
+  # ------------------------------------------------------------------------------------
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: p4n4-mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"   # MQTT TCP
+      - "9001:9001"   # MQTT WebSocket
+    volumes:
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -t '$$SYS/broker/uptime' -C 1 -W 3"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - p4n4-net
+
+  # ------------------------------------------------------------------------------------
+  # Time-Series Database (InfluxDB)
+  # ------------------------------------------------------------------------------------
+  influxdb:
+    image: influxdb:2
+    container_name: p4n4-influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_USERNAME:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD:-adminpassword}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_ORG:-ming}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_BUCKET:-raw_telemetry}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:-p4n4-stack-token}
+      # Additional bucket names (created by init-buckets.sh)
+      INFLUXDB_BUCKET_PROCESSED: ${INFLUXDB_BUCKET_PROCESSED:-processed_metrics}
+      INFLUXDB_BUCKET_AI_EVENTS: ${INFLUXDB_BUCKET_AI_EVENTS:-ai_events}
+      INFLUXDB_BUCKET_HEALTH: ${INFLUXDB_BUCKET_HEALTH:-system_health}
+      INFLUXDB_SANDBOX_BUCKET: ${INFLUXDB_SANDBOX_BUCKET:-sandbox}
+      INFLUXDB_SANDBOX_RETENTION: ${INFLUXDB_SANDBOX_RETENTION:-30d}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+      - ./scripts/init-buckets.sh:/docker-entrypoint-initdb.d/init-buckets.sh:ro
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - p4n4-net
+
+  # ------------------------------------------------------------------------------------
+  # Workflow Engine (Node-RED)
+  # ------------------------------------------------------------------------------------
+  node-red:
+    image: nodered/node-red:latest
+    container_name: p4n4-node-red
+    restart: unless-stopped
+    ports:
+      - "1880:1880"
+    environment:
+      TZ: ${TZ:-UTC}
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-p4n4-stack-token}
+      INFLUXDB_ORG: ${INFLUXDB_ORG:-ming}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-raw_telemetry}
+    volumes:
+      - node-red-data:/data
+      - ./config/node-red/settings.js:/data/settings.js:ro
+      - ./config/node-red/flows.json:/data/flows.json
+    depends_on:
+      mqtt:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:1880',r=>{r.statusCode===200?process.exit(0):process.exit(1)}).on('error',()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - p4n4-net
+
+  # ------------------------------------------------------------------------------------
+  # Data Visualization (Grafana)
+  # ------------------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: p4n4-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-adminpassword}
+      GF_INSTALL_PLUGINS: grafana-clock-panel,marcusolsson-json-datasource
+      # Passed to provisioning templates via env var expansion
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-p4n4-stack-token}
+      INFLUXDB_ORG: ${INFLUXDB_ORG:-ming}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - p4n4-net
+
+# ====================================================================================
+# NETWORKS
+# ====================================================================================
+networks:
+  p4n4-net:
+    name: p4n4-net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ====================================================================================
+# VOLUMES
+# ====================================================================================
+volumes:
+  mosquitto-data:
+  mosquitto-log:
+  influxdb-data:
+  influxdb-config:
+  node-red-data:
+  grafana-data:

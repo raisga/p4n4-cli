@@ -2,7 +2,7 @@
 
 > Command-line tool for bootstrapping and managing **P4N4** projects — Platform for Nexus Neural Network Nodes.
 
-`p4n4` is a developer-facing CLI that scaffolds, configures, and orchestrates the full P4N4 stack: MING services, Edge Impulse inference, and the Gen AI layer. It wraps `docker compose` with project-aware defaults and a guided setup flow, so engineers can go from zero to a running edge AI system in minutes.
+`p4n4` scaffolds, configures, and orchestrates the P4N4 stack: the **MING** IoT services, Edge Impulse inference, and the Gen AI layer. It wraps `docker compose` with project-aware defaults and a guided setup flow.
 
 ---
 
@@ -16,21 +16,21 @@
 - [Project Structure](#project-structure)
 - [Commands](#commands)
   - [p4n4 init](#p4n4-init)
-  - [p4n4 add](#p4n4-add)
-  - [p4n4 remove](#p4n4-remove)
   - [p4n4 up](#p4n4-up)
   - [p4n4 down](#p4n4-down)
   - [p4n4 status](#p4n4-status)
   - [p4n4 logs](#p4n4-logs)
   - [p4n4 secret](#p4n4-secret)
   - [p4n4 validate](#p4n4-validate)
+  - [p4n4 add](#p4n4-add)
+  - [p4n4 remove](#p4n4-remove)
   - [p4n4 upgrade](#p4n4-upgrade)
   - [p4n4 ei](#p4n4-ei)
   - [p4n4 template](#p4n4-template)
 - [Layers](#layers)
 - [Configuration Reference](#configuration-reference)
 - [Default Ports](#default-ports)
-- [Default Credentials](#default-credentials)
+- [Source Repos](#source-repos)
 - [Resources](#resources)
 - [License](#license)
 
@@ -38,31 +38,29 @@
 
 ## Overview
 
-P4N4 is a unified developer platform for IoT and Edge AI engineers. It combines the **MING stack** (MQTT, InfluxDB, Node-RED, Grafana), **Edge Impulse** on-device ML inference, and a **Gen AI layer** (n8n, Letta, Ollama) into a single, composable system.
+P4N4 is a unified developer platform for IoT and Edge AI. It combines the **MING stack** (Mosquitto, InfluxDB, Node-RED, Grafana), **Edge Impulse** on-device ML inference, and a **Gen AI layer** (n8n, Letta, Ollama) into a single composable system.
 
-`p4n4-cli` manages the entire lifecycle of a P4N4 project from your terminal.
+`p4n4-cli` manages the full lifecycle — init, run, inspect, and tear down — from your terminal. Stack files are always fetched from the canonical source repos at init time, so projects are never pinned to a snapshot bundled inside the CLI.
 
 ---
 
 ## Prerequisites
 
 - **Python** 3.11+
-- **pipx** (for isolated installation)
+- **Git** (required by `p4n4 init` to clone stack repos)
 - **Docker** v20.10+
 - **Docker Compose** v2.0+
-- At least **8 GB RAM** available to Docker (16 GB recommended when running Ollama with larger models)
-- An [Edge Impulse](https://edgeimpulse.com/) account and a trained project _(optional, for on-device inference)_
+- **pipx** (recommended for isolated installation)
+- At least **8 GB RAM** available to Docker
 
 Install `pipx` if you don't have it:
 
 ```bash
 # macOS
-brew install pipx
-pipx ensurepath
+brew install pipx && pipx ensurepath
 
 # Linux / WSL
-python3 -m pip install --user pipx
-python3 -m pipx ensurepath
+python3 -m pip install --user pipx && python3 -m pipx ensurepath
 ```
 
 ---
@@ -73,21 +71,16 @@ python3 -m pipx ensurepath
 pipx install p4n4
 ```
 
-Verify the installation:
+Verify:
 
 ```bash
 p4n4 --version
 ```
 
-To upgrade to the latest release:
+Upgrade / uninstall:
 
 ```bash
 pipx upgrade p4n4
-```
-
-To uninstall:
-
-```bash
 pipx uninstall p4n4
 ```
 
@@ -95,50 +88,25 @@ pipx uninstall p4n4
 
 ## Local Development
 
-### 1. Clone and navigate to the repo
-
 ```bash
+# 1. Clone the repo
 git clone https://github.com/raisga/p4n4-cli.git
 cd p4n4-cli
-```
 
-### 2. Create and activate the virtual environment
-
-```bash
-uv venv                        # creates .venv/ (skip if already exists)
+# 2. Create the virtual environment
+uv venv
 source .venv/bin/activate
-```
 
-### 3. Install in editable mode
-
-```bash
+# 3. Install in editable mode with dev extras
 uv pip install -e ".[dev]"
-```
 
-The `[dev]` extra pulls in `pytest` and `ruff`. Omit it if you only need the CLI.
-
-### 4. Run the CLI
-
-```bash
+# 4. Verify
 p4n4 --help
-p4n4 --version
-```
 
-Or without activating the venv:
-
-```bash
-.venv/bin/p4n4 --help
-```
-
-### 5. Run the tests
-
-```bash
+# 5. Run tests
 pytest tests/ -v
-```
 
-### 6. Run the linter
-
-```bash
+# 6. Lint
 ruff check .
 ```
 
@@ -147,62 +115,74 @@ ruff check .
 ## Quick Start
 
 ```bash
-# 1. Create a new project
-p4n4 init my-edge-project
-cd my-edge-project
+# Scaffold a new IoT project (fetches latest files from p4n4-iot)
+p4n4 init my-project
+cd my-project
 
-# 2. Start the full stack
+# Validate the generated config
+p4n4 validate
+
+# Start the MING stack
 p4n4 up
 
-# 3. Check that all services are running
+# Check service health
 p4n4 status
 
-# 4. Stop everything when done
+# Tail logs from a specific service
+p4n4 logs grafana
+
+# Stop the stack
 p4n4 down
 ```
 
-Once the stack is up, open the service dashboards:
+**No internet access?** Point `--source` at a local checkout of `p4n4-iot`:
 
-| Service  | URL                      |
-|----------|--------------------------|
-| Grafana  | http://localhost:3000    |
-| Node-RED | http://localhost:1880    |
-| n8n      | http://localhost:5678    |
-| InfluxDB | http://localhost:8086    |
-| Letta    | http://localhost:8283    |
-| Ollama   | http://localhost:11434   |
+```bash
+p4n4 init my-project --source ../p4n4-iot
+```
+
+Once the stack is up:
+
+| Service  | URL                   |
+|----------|-----------------------|
+| Grafana  | http://localhost:3000 |
+| Node-RED | http://localhost:1880 |
+| InfluxDB | http://localhost:8086 |
 
 ---
 
 ## Project Structure
 
-After running `p4n4 init`, your project directory will look like this:
+After `p4n4 init`, the project directory contains:
 
 ```
-my-edge-project/
-├── .p4n4.json                  # Project manifest (name, enabled layers, schema version)
-├── .env                        # Environment variables (credentials, model names)
-├── docker-compose.yml          # Generated orchestration file
+my-project/
+├── .p4n4.json                       # Manifest (project name, active layers, schema version)
+├── .env                             # Credentials and config (auto-generated secrets)
+├── docker-compose.yml               # Stack orchestration (sourced from p4n4-iot)
 ├── config/
 │   ├── mosquitto/
-│   │   └── mosquitto.conf      # MQTT broker configuration
+│   │   ├── mosquitto.conf           # MQTT broker config
+│   │   ├── passwd.example           # Auth template for production hardening
+│   │   └── acl.example              # ACL template
 │   ├── node-red/
-│   │   ├── settings.js         # Node-RED runtime settings
-│   │   └── flows.json          # Starter MQTT-to-InfluxDB flow
+│   │   ├── settings.js              # Node-RED runtime settings
+│   │   └── flows.json               # MQTT → InfluxDB pipeline
 │   └── grafana/
 │       └── provisioning/
 │           ├── datasources/
-│           │   └── datasources.yml   # Auto-configured InfluxDB datasource
+│           │   └── datasources.yml  # Pre-configured InfluxDB datasources (5 buckets)
 │           └── dashboards/
 │               ├── dashboards.yml
 │               └── json/
-│                   └── iot-overview.json  # Starter IoT dashboard
-├── scripts/
-│   └── inference.py            # Edge Impulse inference + MQTT publisher
-└── README.md                   # Project-level notes
+│                   └── iot-overview.json
+└── scripts/
+    ├── init-buckets.sh              # Creates additional InfluxDB buckets on first run
+    ├── init-sandbox.sh
+    └── selector.sh
 ```
 
-`.p4n4.json` is the single source of truth for what layers and services are active. Edit it to enable or disable components before running `p4n4 up`.
+`.p4n4.json` tracks which layers are active and the project schema version. All stack files originate from [p4n4-iot](https://github.com/raisga/p4n4-iot) and are never modified by the CLI after scaffolding.
 
 ---
 
@@ -210,33 +190,135 @@ my-edge-project/
 
 ### `p4n4 init`
 
-Scaffold a new P4N4 project with an interactive setup wizard.
+Scaffold a new P4N4 project. Clones the canonical stack repo(s) at init time so the project always starts from the latest source.
 
 ```bash
 p4n4 init <project-name> [options]
 ```
 
-**Options:**
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--layer <name>` | Layers to enable: `iot`, `ai`, `edge`, `all`, or comma-separated | `iot` |
+| `--no-interactive` | Skip the wizard and use generated defaults | — |
+| `--source <path>` | Use a local directory instead of cloning (offline / dev) | — |
+
+The interactive wizard prompts for InfluxDB org, timezone, and admin passwords; all passwords default to randomly generated values if left blank.
+
+```bash
+# IoT stack, interactive wizard
+p4n4 init sensor-network
+
+# Non-interactive with explicit layer
+p4n4 init sensor-network --layer iot --no-interactive
+
+# From a local p4n4-iot checkout (no network required)
+p4n4 init sensor-network --source ../p4n4-iot --no-interactive
+```
+
+---
+
+### `p4n4 up`
+
+Start the project stack (`docker compose up -d`).
+
+```bash
+p4n4 up [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--build` | Rebuild images before starting |
+| `--pull` | Pull the latest images before starting |
+
+```bash
+p4n4 up
+p4n4 up --pull
+```
+
+---
+
+### `p4n4 down`
+
+Stop all running services.
+
+```bash
+p4n4 down [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--volumes` | Also remove persistent data volumes _(destructive — prompts for confirmation)_ |
+
+```bash
+p4n4 down
+
+# Full teardown — deletes all stored data
+p4n4 down --volumes
+```
+
+---
+
+### `p4n4 status`
+
+Print a service status table.
+
+```bash
+p4n4 status
+```
+
+```
+       Stack status — my-project
+┏━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Service   ┃ Status  ┃ Health  ┃ Ports                 ┃
+┡━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
+│ mqtt      │ running │ healthy │ 1883→1883/tcp          │
+│ influxdb  │ running │ healthy │ 8086→8086/tcp          │
+│ node-red  │ running │ healthy │ 1880→1880/tcp          │
+│ grafana   │ running │ healthy │ 3000→3000/tcp          │
+└───────────┴─────────┴─────────┴───────────────────────┘
+```
+
+---
+
+### `p4n4 logs`
+
+Stream logs from all services or a specific one.
+
+```bash
+p4n4 logs [service] [options]
+```
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--layer iot` | Enable the IoT layer (MING stack) | — |
-| `--layer ai` | Enable the Gen AI layer (n8n, Ollama, Letta) | — |
-| `--layer edge` | Enable the Edge Impulse inference layer | — |
-| `--layer all` | Enable all layers | `all` |
-| `--no-interactive` | Skip the wizard and use defaults | — |
-
-**Example:**
+| `--tail <n>` | Lines from end of existing logs | `100` |
+| `--no-follow` | Print once and exit | — |
 
 ```bash
-# Full stack with interactive wizard
-p4n4 init warehouse-safety
+p4n4 logs
+p4n4 logs node-red
+p4n4 logs influxdb --tail 50 --no-follow
+```
 
-# IoT layer only, no prompts
-p4n4 init sensor-network --layer iot --no-interactive
+---
 
-# Gen AI layer only
-p4n4 init ai-assistant --layer ai
+### `p4n4 secret`
+
+Rotate `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN`, and `GRAFANA_PASSWORD` in `.env` with new randomly generated values. Prompts for confirmation before writing.
+
+```bash
+p4n4 secret
+```
+
+Run `p4n4 down && p4n4 up` after rotating secrets to apply them.
+
+---
+
+### `p4n4 validate`
+
+Check that `.p4n4.json`, `.env`, and all required config files are present and valid for the active layers.
+
+```bash
+p4n4 validate
 ```
 
 ---
@@ -249,15 +331,7 @@ Add a layer or service to an existing project.
 p4n4 add <component>
 ```
 
-**Example:**
-
-```bash
-# Add the Gen AI layer to an existing IoT project
-p4n4 add ai
-
-# Add Edge Impulse support
-p4n4 add edge
-```
+> Not yet implemented.
 
 ---
 
@@ -269,156 +343,19 @@ Remove a layer or service from an existing project.
 p4n4 remove <component>
 ```
 
-**Example:**
-
-```bash
-# Remove the Gen AI layer
-p4n4 remove ai
-```
-
----
-
-### `p4n4 up`
-
-Start the project stack. Equivalent to `docker compose up -d` with project-aware configuration.
-
-```bash
-p4n4 up [options]
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--edge` | Start only Edge AI services (MQTT, InfluxDB, Node-RED, Grafana) |
-| `--ai` | Start only Gen AI services (n8n, Ollama, Letta) |
-| `--build` | Rebuild images before starting |
-| `--pull` | Pull the latest images before starting |
-
-**Example:**
-
-```bash
-# Start everything
-p4n4 up
-
-# Start just the MING stack for data pipeline work
-p4n4 up --edge
-```
-
----
-
-### `p4n4 down`
-
-Stop all running services for the current project.
-
-```bash
-p4n4 down [options]
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--volumes` | Also remove persistent data volumes _(destructive)_ |
-
-**Example:**
-
-```bash
-p4n4 down
-
-# Full teardown — removes all stored data
-p4n4 down --volumes
-```
-
----
-
-### `p4n4 status`
-
-Print a service status table showing which containers are running, their ports, and their layer.
-
-```bash
-p4n4 status
-```
-
-**Example output:**
-
-```
-  P4N4 :: my-edge-project — Service Status
-  ══════════════════════════════════════════════════════════════════
-  SERVICE        STATUS       PORT     LAYER        URL
-  ─────────────  ──────────   ──────   ──────────   ─────────────────────────
-  mqtt           running      1883     IoT          -
-  influxdb       running      8086     IoT          http://localhost:8086
-  node-red       running      1880     IoT          http://localhost:1880
-  grafana        running      3000     IoT          http://localhost:3000
-  n8n            running      5678     Gen AI       http://localhost:5678
-  ollama         running      11434    Gen AI       http://localhost:11434
-  letta          running      8283     Gen AI       http://localhost:8283
-```
-
----
-
-### `p4n4 logs`
-
-Stream logs from all services (or a specific one).
-
-```bash
-p4n4 logs [service] [options]
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--tail <n>` | Number of lines to show from the end of existing logs |
-| `--no-follow` | Print logs once and exit |
-
-**Example:**
-
-```bash
-# Follow all logs
-p4n4 logs
-
-# Follow Node-RED logs only
-p4n4 logs node-red
-
-# Last 50 lines from InfluxDB, then exit
-p4n4 logs influxdb --tail 50 --no-follow
-```
-
----
-
-### `p4n4 secret`
-
-Generate or rotate project secrets in `.env`.
-
-```bash
-p4n4 secret
-```
-
-Regenerates random passwords and tokens for all services. Changes take effect on the next `p4n4 up`.
-
----
-
-### `p4n4 validate`
-
-Validate the current project's `.p4n4.json` manifest and `.env` configuration.
-
-```bash
-p4n4 validate
-```
-
-Reports missing required fields, unknown layer names, or mismatched service references.
+> Not yet implemented.
 
 ---
 
 ### `p4n4 upgrade`
 
-Pull the latest Docker images for all active services, or update bundled CLI templates to the newest published versions.
+Pull the latest Docker images for all active services.
 
 ```bash
 p4n4 upgrade
 ```
+
+> Not yet implemented.
 
 ---
 
@@ -433,111 +370,80 @@ p4n4 ei run
 
 | Subcommand | Description |
 |------------|-------------|
-| `deploy` | Deploy a trained Edge Impulse model (`.eim`) to the edge device |
-| `run` | Run inference using the deployed model and publish results over MQTT |
+| `deploy` | Deploy a trained Edge Impulse model to the edge device |
+| `run` | Run inference and publish results over MQTT |
 
-**Example:**
-
-```bash
-# Deploy the compiled model
-p4n4 ei deploy
-
-# Start inference loop
-p4n4 ei run
-```
+> Not yet implemented.
 
 ---
 
 ### `p4n4 template`
 
-Browse and apply community project templates from the p4n4 template registry.
+Browse and apply community project templates.
 
 ```bash
 p4n4 template search [query]
 p4n4 template apply <name>
 ```
 
-| Subcommand | Description |
-|------------|-------------|
-| `search` | Search the registry by keyword; lists all templates if no query is given |
-| `apply` | Overlay a template onto the current project |
-
-**Example:**
-
-```bash
-# List all available templates
-p4n4 template search
-
-# Find templates related to predictive maintenance
-p4n4 template search predictive-maintenance
-
-# Apply a template
-p4n4 template apply iot/industrial-monitor
-```
+> Not yet implemented.
 
 ---
 
 ## Layers
 
-P4N4 is organized into three composable layers. You can run any combination independently or together.
+P4N4 is organized into three composable layers.
 
-### IoT Layer (MING Stack)
-
-| Service | Role |
-|---------|------|
-| **Eclipse Mosquitto (MQTT)** | Lightweight message broker — central nervous system of the IoT pipeline |
-| **InfluxDB** | Time-series database for sensor readings and inference results |
-| **Node-RED** | Low-code flow engine for MQTT routing, business logic, and orchestration |
-| **Grafana** | Real-time dashboarding and alerting over InfluxDB data |
-
-### Edge Layer
+### IoT — MING Stack
 
 | Service | Role |
 |---------|------|
-| **Edge Impulse** | On-device ML inference; publishes classification results over MQTT |
+| **Mosquitto** | MQTT broker — central message bus |
+| **InfluxDB** | Time-series database (5 pre-configured buckets) |
+| **Node-RED** | Flow engine for MQTT routing and pipeline logic |
+| **Grafana** | Real-time dashboarding and alerting |
 
-### Gen AI Layer
+### Edge
 
 | Service | Role |
 |---------|------|
-| **n8n** | Workflow automation — bridges the IoT and Gen AI layers via MQTT/InfluxDB triggers |
-| **Letta** | Stateful AI agent framework with long-term memory backed by Ollama |
-| **Ollama** | Local LLM runtime — runs open-weight models entirely on local hardware |
+| **Edge Impulse** | On-device ML inference; publishes results over MQTT |
+
+### Gen AI
+
+| Service | Role |
+|---------|------|
+| **n8n** | Workflow automation bridging IoT and AI layers |
+| **Letta** | Stateful AI agent framework with long-term memory |
+| **Ollama** | Local LLM runtime for open-weight models |
 
 ---
 
 ## Configuration Reference
 
-All configuration lives in `.env` at the project root. `p4n4 init` generates this file from a template. Key variables:
+`.env` is generated by `p4n4 init` with random secrets. Key variables for the IoT layer:
 
 ```bash
-# ── Project ────────────────────────────────────────────────────────────────
-P4N4_PROJECT_NAME=my-edge-project
+TZ=UTC
 
-# ── InfluxDB ───────────────────────────────────────────────────────────────
+# InfluxDB
 INFLUXDB_USERNAME=admin
-INFLUXDB_PASSWORD=adminpassword
-INFLUXDB_ORG=p4n4
-INFLUXDB_BUCKET=iot-data
-INFLUXDB_TOKEN=your-influxdb-token
+INFLUXDB_PASSWORD=<generated>
+INFLUXDB_ORG=ming
+INFLUXDB_TOKEN=<generated>
+INFLUXDB_BUCKET=raw_telemetry
+INFLUXDB_BUCKET_PROCESSED=processed_metrics
+INFLUXDB_BUCKET_AI_EVENTS=ai_events
+INFLUXDB_BUCKET_HEALTH=system_health
+INFLUXDB_SANDBOX_BUCKET=sandbox
+INFLUXDB_SANDBOX_RETENTION=30d
 
-# ── Grafana ────────────────────────────────────────────────────────────────
-GF_SECURITY_ADMIN_USER=admin
-GF_SECURITY_ADMIN_PASSWORD=adminpassword
-
-# ── n8n ────────────────────────────────────────────────────────────────────
-N8N_BASIC_AUTH_USER=admin
-N8N_BASIC_AUTH_PASSWORD=adminpassword
-
-# ── Ollama ─────────────────────────────────────────────────────────────────
-OLLAMA_DEFAULT_MODEL=llama3.2
-
-# ── Edge Impulse ───────────────────────────────────────────────────────────
-EI_MODEL_PATH=/app/model/model.eim
-MQTT_TOPIC_INFERENCE=inference/results
+# Grafana
+GRAFANA_USER=admin
+GRAFANA_PASSWORD=<generated>
 ```
 
-> **Note:** Change all passwords before deploying to any networked or production environment. Use `p4n4 secret` to generate strong random credentials.
+Use `p4n4 secret` to rotate credentials at any time.
 
 ---
 
@@ -555,22 +461,22 @@ MQTT_TOPIC_INFERENCE=inference/results
 
 ---
 
-## Default Credentials
+## Source Repos
 
-All credentials are defined in `.env`. Defaults after `p4n4 init`:
+Stack files are fetched from these repos at `p4n4 init` time. URLs are defined in [`p4n4/sources.yaml`](p4n4/sources.yaml) and can be overridden per-layer via the `--source` flag or by editing the file to point at a fork or mirror.
 
-| Service  | Username | Password        |
-|----------|----------|-----------------|
-| InfluxDB | `admin`  | `adminpassword` |
-| Grafana  | `admin`  | `adminpassword` |
-| n8n      | `admin`  | `adminpassword` |
+| Layer | Repo |
+|-------|------|
+| IoT   | https://github.com/raisga/p4n4-iot |
+| AI    | https://github.com/raisga/p4n4-ai |
+| Edge  | https://github.com/raisga/p4n4-edge |
 
 ---
 
 ## Resources
 
-- [p4n4.com](https://p4n4.com) — Platform overview and architecture guide
-- [p4n4-docker](https://github.com/raisga/p4n4-docker) — Docker Compose source for all services
+- [p4n4.com](https://p4n4.com) — Platform overview
+- [p4n4-iot](https://github.com/raisga/p4n4-iot) — MING stack source
 - [MING Stack Tutorial](https://github.com/ArthurKretzer/tutorial-p4n4-stack) — IIoT data stack tutorial (XIV SBESC, 2024)
 - [MING Stack with Edge Impulse](https://www.edgeimpulse.com/blog/accelerate-edge-ai-application-development-with-the-p4n4-stack-edge-impulse/) — Integration guide
 - [Edge Impulse Linux SDK (Python)](https://github.com/edgeimpulse/linux-sdk-python)
@@ -578,9 +484,6 @@ All credentials are defined in `.env`. Defaults after `p4n4 init`:
 - [InfluxDB Documentation](https://docs.influxdata.com/)
 - [Node-RED Documentation](https://nodered.org/docs/)
 - [Grafana Documentation](https://grafana.com/docs/)
-- [n8n Documentation](https://docs.n8n.io/)
-- [Letta Documentation](https://docs.letta.com/)
-- [Ollama](https://github.com/ollama/ollama)
 
 ---
 

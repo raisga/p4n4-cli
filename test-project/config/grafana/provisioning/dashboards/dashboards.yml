@@ -1,0 +1,17 @@
+# ==============================================================================
+# Grafana Dashboards Provisioning
+# ==============================================================================
+
+apiVersion: 1
+
+providers:
+  - name: 'MING Stack Dashboards'
+    orgId: 1
+    folder: 'MING'
+    folderUid: 'ming'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/json
