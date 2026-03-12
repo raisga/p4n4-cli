@@ -27,6 +27,13 @@ _IOT_COPY = [
     "scripts",
 ]
 
+# Files/dirs to copy from the ai repo into the new project
+_AI_COPY = [
+    "docker-compose.yml",
+    "config",
+    "scripts",
+]
+
 
 def _token(n: int = 32) -> str:
     return secrets.token_hex(n)
@@ -40,22 +47,20 @@ def _ask_password(prompt: str, default: str) -> str:
     return questionary.password(prompt).ask() or default
 
 
-def _fetch_iot_source(source: str | None) -> Path:
+def _fetch_source(repo_url: str, source: str | None, prefix: str) -> tuple[Path, str | None]:
     """
-    Return a Path to the p4n4-iot source directory.
+    Return a (Path, tmpdir_or_None) to a stack source directory.
 
-    If `source` is given it must be a local path to a p4n4-iot checkout.
-    Otherwise, clone the canonical repo at a shallow depth into a temp dir.
-    The caller is responsible for cleaning up the temp dir when source is None.
+    If `source` is a local path it is used directly; otherwise the repo is
+    cloned at shallow depth into a temp dir that the caller must clean up.
     """
     if source:
         path = Path(source).expanduser().resolve()
         if not path.exists():
             raise typer.BadParameter(f"--source path does not exist: {path}")
-        return path, None  # (src_path, tmpdir_to_cleanup)
+        return path, None
 
-    repo_url = sources.iot_repo_url
-    tmp = tempfile.mkdtemp(prefix="p4n4-iot-")
+    tmp = tempfile.mkdtemp(prefix=prefix)
     console.print(f"  Cloning [bold]{repo_url}[/bold] …")
     result = subprocess.run(
         ["git", "clone", "--depth", "1", repo_url, tmp],
@@ -66,15 +71,28 @@ def _fetch_iot_source(source: str | None) -> Path:
         shutil.rmtree(tmp, ignore_errors=True)
         raise RuntimeError(
             f"git clone failed:\n{result.stderr.strip()}\n\n"
-            "Tip: use --source <path> to scaffold from a local p4n4-iot checkout."
+            f"Tip: use --source <path> to scaffold from a local checkout."
         )
     return Path(tmp), tmp
 
 
-def _scaffold_iot(project_dir: Path, env_values: dict[str, str], source: str | None) -> None:
-    src, tmpdir = _fetch_iot_source(source)
+def _fetch_iot_source(source: str | None) -> tuple[Path, str | None]:
+    return _fetch_source(sources.iot_repo_url, source, "p4n4-iot-")
+
+
+def _fetch_ai_source(source: str | None) -> tuple[Path, str | None]:
+    return _fetch_source(sources.ai_repo_url, source, "p4n4-ai-")
+
+
+def _scaffold_layer(
+    project_dir: Path,
+    copy_list: list[str],
+    env_values: dict[str, str],
+    src: Path,
+    tmpdir: str | None,
+) -> None:
     try:
-        for name in _IOT_COPY:
+        for name in copy_list:
             s = src / name
             if not s.exists():
                 raise FileNotFoundError(f"Expected '{name}' in source repo but it was not found.")
@@ -85,8 +103,10 @@ def _scaffold_iot(project_dir: Path, env_values: dict[str, str], source: str | N
                 shutil.copy2(s, d)
 
         # Make shell scripts executable
-        for script in (project_dir / "scripts").glob("*.sh"):
-            script.chmod(script.stat().st_mode | 0o111)
+        scripts_dir = project_dir / "scripts"
+        if scripts_dir.is_dir():
+            for script in scripts_dir.glob("*.sh"):
+                script.chmod(script.stat().st_mode | 0o111)
 
         # Write .env — values override the .env.example template from the repo
         env_template = src / ".env.example"
@@ -94,6 +114,16 @@ def _scaffold_iot(project_dir: Path, env_values: dict[str, str], source: str | N
     finally:
         if tmpdir:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _scaffold_iot(project_dir: Path, env_values: dict[str, str], source: str | None) -> None:
+    src, tmpdir = _fetch_iot_source(source)
+    _scaffold_layer(project_dir, _IOT_COPY, env_values, src, tmpdir)
+
+
+def _scaffold_ai(project_dir: Path, env_values: dict[str, str], source: str | None) -> None:
+    src, tmpdir = _fetch_ai_source(source)
+    _scaffold_layer(project_dir, _AI_COPY, env_values, src, tmpdir)
 
 
 def cmd(
@@ -110,6 +140,13 @@ def cmd(
         typer.Option(
             "--source",
             help="Local path to a p4n4-iot checkout (skips git clone; useful offline).",
+        ),
+    ] = None,
+    ai_source: Annotated[
+        str | None,
+        typer.Option(
+            "--ai-source",
+            help="Local path to a p4n4-ai checkout (skips git clone; useful offline).",
         ),
     ] = None,
 ) -> None:
@@ -136,6 +173,10 @@ def cmd(
         influx_password = _token(12)
         influx_token = _token(32)
         grafana_password = _token(12)
+        letta_password = _token(12)
+        n8n_password = _token(12)
+        n8n_encryption_key = _token(16)
+        n8n_host = "localhost"
     else:
         console.print("\n[dim]Press Enter to accept defaults.[/dim]\n")
         org = _ask("InfluxDB organisation", "ming")
@@ -152,8 +193,28 @@ def cmd(
             "Grafana admin password (leave blank to auto-generate)",
             _token(12),
         )
+        if "ai" in layers:
+            console.print("\n[dim]GenAI stack configuration:[/dim]\n")
+            letta_password = _ask_password(
+                "Letta server password (leave blank to auto-generate)",
+                _token(12),
+            )
+            n8n_password = _ask_password(
+                "n8n admin password (leave blank to auto-generate)",
+                _token(12),
+            )
+            n8n_encryption_key = _ask_password(
+                "n8n encryption key (leave blank to auto-generate, must be 32+ chars)",
+                _token(16),
+            )
+            n8n_host = _ask("n8n hostname (for webhooks)", "localhost")
+        else:
+            letta_password = _token(12)
+            n8n_password = _token(12)
+            n8n_encryption_key = _token(16)
+            n8n_host = "localhost"
 
-    env_values: dict[str, str] = {
+    iot_env_values: dict[str, str] = {
         "TZ": tz,
         "INFLUXDB_USERNAME": "admin",
         "INFLUXDB_PASSWORD": influx_password,
@@ -169,12 +230,27 @@ def cmd(
         "GRAFANA_PASSWORD": grafana_password,
     }
 
+    ai_env_values: dict[str, str] = {
+        "LETTA_SERVER_PASSWORD": letta_password,
+        "N8N_BASIC_AUTH_USER": "admin",
+        "N8N_BASIC_AUTH_PASSWORD": n8n_password,
+        "N8N_ENCRYPTION_KEY": n8n_encryption_key,
+        "N8N_HOST": n8n_host,
+        # Shared InfluxDB values (must match p4n4-iot when used alongside it)
+        "INFLUXDB_TOKEN": influx_token,
+        "INFLUXDB_ORG": org,
+        "INFLUXDB_BUCKET": "raw_telemetry",
+    }
+
     # ── Create project directory and scaffold ─────────────────────────────────
     project_dir.mkdir(parents=True)
 
     try:
         if "iot" in layers:
-            _scaffold_iot(project_dir, env_values, source)
+            _scaffold_iot(project_dir, iot_env_values, source)
+
+        if "ai" in layers:
+            _scaffold_ai(project_dir, ai_env_values, ai_source)
 
         mf.save(project_dir / mf.MANIFEST_FILE, mf.create(project_name, layers))
 

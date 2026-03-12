@@ -21,6 +21,16 @@ _REQUIRED_ENV_KEYS = {
         "GRAFANA_USER",
         "GRAFANA_PASSWORD",
     ],
+    "ai": [
+        "LETTA_SERVER_PASSWORD",
+        "N8N_BASIC_AUTH_USER",
+        "N8N_BASIC_AUTH_PASSWORD",
+        "N8N_ENCRYPTION_KEY",
+        "N8N_HOST",
+        "INFLUXDB_TOKEN",
+        "INFLUXDB_ORG",
+        "INFLUXDB_BUCKET",
+    ],
 }
 
 _REQUIRED_FILES = {
@@ -32,6 +42,12 @@ _REQUIRED_FILES = {
         "config/node-red/flows.json",
         "config/grafana/provisioning/datasources/datasources.yml",
         "scripts/init-buckets.sh",
+    ],
+    "ai": [
+        "docker-compose.yml",
+        ".env",
+        "config/letta/letta.conf",
+        "scripts/pull-models.sh",
     ],
 }
 

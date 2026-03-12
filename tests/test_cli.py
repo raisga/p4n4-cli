@@ -12,8 +12,9 @@ from p4n4.cli import app
 
 runner = CliRunner()
 
-# Local p4n4-iot checkout used as --source in tests (avoids network calls)
+# Local checkouts used as --source in tests (avoids network calls)
 _IOT_SOURCE = str(Path(__file__).parent.parent.parent / "p4n4-iot")
+_AI_SOURCE = str(Path(__file__).parent.parent.parent / "p4n4-ai")
 
 
 def test_version():
@@ -81,3 +82,30 @@ def test_secret_requires_manifest():
         result = runner.invoke(app, ["secret"])
         assert result.exit_code != 0
         assert ".p4n4.json" in result.output
+
+
+def test_init_ai_no_interactive():
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            app,
+            ["init", "test-ai-project", "--layer", "ai", "--no-interactive", "--ai-source", _AI_SOURCE],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.output
+        assert "test-ai-project" in result.output
+
+
+def test_validate_passes_on_fresh_ai_project():
+    with runner.isolated_filesystem() as tmpdir:
+        runner.invoke(
+            app,
+            ["init", "proj-ai", "--layer", "ai", "--no-interactive", "--ai-source", _AI_SOURCE],
+        )
+        old_cwd = os.getcwd()
+        os.chdir(Path(tmpdir) / "proj-ai")
+        try:
+            result = runner.invoke(app, ["validate"], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, result.output
+        assert "All checks passed" in result.output

@@ -14,9 +14,14 @@ from p4n4.utils import manifest as mf
 console = Console()
 
 _ROTATABLE_KEYS = [
+    # IoT layer
     "INFLUXDB_PASSWORD",
     "INFLUXDB_TOKEN",
     "GRAFANA_PASSWORD",
+    # AI layer
+    "LETTA_SERVER_PASSWORD",
+    "N8N_BASIC_AUTH_PASSWORD",
+    "N8N_ENCRYPTION_KEY",
 ]
 
 
