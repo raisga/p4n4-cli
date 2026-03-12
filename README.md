@@ -143,11 +143,11 @@ cd my-ai-project
 p4n4 up
 ```
 
-**No internet access?** Point `--source` / `--ai-source` at local checkouts:
+**No internet access?** Point `--source-iot` / `--source-ai` at local checkouts:
 
 ```bash
-p4n4 init my-project --source ../p4n4-iot
-p4n4 init my-ai-project --layer ai --ai-source ../p4n4-ai
+p4n4 init my-project --source-iot ../p4n4-iot
+p4n4 init my-ai-project --layer ai --source-ai ../p4n4-ai
 ```
 
 Once the IoT stack is up:
@@ -239,8 +239,8 @@ p4n4 init <project-name> [options]
 |------|-------------|---------|
 | `--layer <name>` | Layers to enable: `iot`, `ai`, `edge`, `all`, or comma-separated | `iot` |
 | `--no-interactive` | Skip the wizard and use generated defaults | — |
-| `--source <path>` | Local p4n4-iot checkout (skips git clone; useful offline) | — |
-| `--ai-source <path>` | Local p4n4-ai checkout (skips git clone; useful offline) | — |
+| `--source-iot <path>` | Local p4n4-iot checkout (skips git clone; useful offline) | — |
+| `--source-ai <path>` | Local p4n4-ai checkout (skips git clone; useful offline) | — |
 
 The interactive wizard prompts for InfluxDB org, timezone, and admin passwords. When the `ai` layer is active it also prompts for Letta, n8n, and n8n encryption key values. All secrets default to randomly generated values if left blank.
 
@@ -252,8 +252,8 @@ p4n4 init sensor-network
 p4n4 init my-ai-project --layer ai --no-interactive
 
 # From local checkouts (no network required)
-p4n4 init sensor-network --source ../p4n4-iot --no-interactive
-p4n4 init my-ai-project --layer ai --ai-source ../p4n4-ai --no-interactive
+p4n4 init sensor-network --source-iot ../p4n4-iot --no-interactive
+p4n4 init my-ai-project --layer ai --source-ai ../p4n4-ai --no-interactive
 ```
 
 ---
@@ -525,7 +525,7 @@ INFLUXDB_BUCKET=raw_telemetry
 
 ## Source Repos
 
-Stack files are fetched from these repos at `p4n4 init` time. URLs are defined in [`p4n4/sources.yaml`](p4n4/sources.yaml) and can be overridden per-layer via `--source` (IoT) and `--ai-source` (AI), or by editing the file to point at a fork or mirror.
+Stack files are fetched from these repos at `p4n4 init` time. URLs are defined in [`p4n4/sources.yaml`](p4n4/sources.yaml) and can be overridden per-layer via `--source-iot` (IoT) and `--source-ai` (AI), or by editing the file to point at a fork or mirror.
 
 | Layer | Repo |
 |-------|------|

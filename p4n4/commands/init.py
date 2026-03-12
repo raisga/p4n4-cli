@@ -138,14 +138,14 @@ def cmd(
     source: Annotated[
         str | None,
         typer.Option(
-            "--source",
+            "--source-iot",
             help="Local path to a p4n4-iot checkout (skips git clone; useful offline).",
         ),
     ] = None,
     ai_source: Annotated[
         str | None,
         typer.Option(
-            "--ai-source",
+            "--source-ai",
             help="Local path to a p4n4-ai checkout (skips git clone; useful offline).",
         ),
     ] = None,
