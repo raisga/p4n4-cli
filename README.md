@@ -4,11 +4,14 @@
 
 `p4n4` scaffolds, configures, and orchestrates the P4N4 stack: the **MING** IoT services, Edge Impulse inference, and the Gen AI layer. It wraps `docker compose` with project-aware defaults and a guided setup flow.
 
+Part of the [p4n4](https://github.com/raisga/p4n4) platform — an EdgeAI + GenAI integration platform for IoT deployments.
+
 ---
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Repository Map](#repository-map)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Local Development](#local-development)
@@ -44,14 +47,29 @@ P4N4 is a unified developer platform for IoT and Edge AI. It combines the **MING
 
 ---
 
+## Repository Map
+
+| Repository | Description |
+|------------|-------------|
+| **[p4n4](https://github.com/raisga/p4n4)** | Umbrella repo — architecture, ADRs, cross-cutting docs |
+| [p4n4-iot](https://github.com/raisga/p4n4-iot) | IoT stack: Mosquitto · InfluxDB · Node-RED · Grafana |
+| [p4n4-ai](https://github.com/raisga/p4n4-ai) | GenAI stack: Ollama · Letta · n8n |
+| [p4n4-edge](https://github.com/raisga/p4n4-edge) | Edge Impulse inference stack |
+| [p4n4-api](https://github.com/raisga/p4n4-api) | Rust REST API gateway (port 8000) |
+| [p4n4-lib](https://github.com/raisga/p4n4-lib) | Shared Rust library (`pip install p4n4lib` for Python bindings) |
+| **[p4n4-cli](https://github.com/raisga/p4n4-cli)** | This repo — Python CLI (`pip install p4n4`) |
+| [p4n4-templates](https://github.com/raisga/p4n4-templates) | Community template registry |
+| [p4n4-docs](https://github.com/raisga/p4n4-docs) | Full technical documentation site |
+
+---
+
 ## Prerequisites
 
 - **Python** 3.11+
 - **Git** (required by `p4n4 init` to clone stack repos)
-- **Docker** v20.10+
-- **Docker Compose** v2.0+
+- **Docker** v24+ (with Compose v2)
 - **pipx** (recommended for isolated installation)
-- At least **8 GB RAM** available to Docker
+- At least **4 GB RAM** available to Docker (8 GB recommended when running Ollama)
 
 Install `pipx` if you don't have it:
 
@@ -69,6 +87,12 @@ python3 -m pip install --user pipx && python3 -m pipx ensurepath
 
 ```bash
 pipx install p4n4
+```
+
+Or with plain pip:
+
+```bash
+pip install p4n4
 ```
 
 Verify:
@@ -143,6 +167,15 @@ cd my-ai-project
 p4n4 up
 ```
 
+**Scaffold with all layers:**
+
+```bash
+p4n4 init my-full-project --layer all
+cd my-full-project
+p4n4 up
+p4n4 up --ai
+```
+
 **No internet access?** Point `--source-iot` / `--source-ai` at local checkouts:
 
 ```bash
@@ -160,10 +193,10 @@ Once the IoT stack is up:
 
 Once the AI stack is up:
 
-| Service | URL                   |
-|---------|-----------------------|
-| n8n     | http://localhost:5678 |
-| Letta   | http://localhost:8283 |
+| Service | URL                    |
+|---------|------------------------|
+| n8n     | http://localhost:5678  |
+| Letta   | http://localhost:8283  |
 | Ollama  | http://localhost:11434 |
 
 ---
@@ -251,6 +284,9 @@ p4n4 init sensor-network
 # GenAI stack, non-interactive
 p4n4 init my-ai-project --layer ai --no-interactive
 
+# All layers enabled
+p4n4 init my-full-project --layer all
+
 # From local checkouts (no network required)
 p4n4 init sensor-network --source-iot ../p4n4-iot --no-interactive
 p4n4 init my-ai-project --layer ai --source-ai ../p4n4-ai --no-interactive
@@ -268,12 +304,16 @@ p4n4 up [options]
 
 | Flag | Description |
 |------|-------------|
+| `--ai` | Start Gen AI services only |
+| `--edge` | Start Edge AI services only |
 | `--build` | Rebuild images before starting |
 | `--pull` | Pull the latest images before starting |
 
 ```bash
 p4n4 up
 p4n4 up --pull
+p4n4 up --ai
+p4n4 up --edge
 ```
 
 ---
@@ -461,6 +501,8 @@ P4N4 is organized into three composable layers.
 | **Letta** | Stateful AI agent framework with long-term memory |
 | **Ollama** | Local LLM runtime for open-weight models |
 
+All three stacks communicate over a shared `p4n4-net` Docker bridge network owned by `p4n4-iot`. The CLI handles network creation and stack ordering automatically.
+
 ---
 
 ## Configuration Reference
@@ -511,44 +553,49 @@ INFLUXDB_BUCKET=raw_telemetry
 
 ## Default Ports
 
-| Service          | Port                              |
-|------------------|-----------------------------------|
-| MQTT (Mosquitto) | `1883` (MQTT), `9001` (WebSocket) |
-| InfluxDB         | `8086`                            |
-| Node-RED         | `1880`                            |
-| Grafana          | `3000`                            |
-| n8n              | `5678`                            |
-| Letta            | `8283`                            |
-| Ollama           | `11434`                           |
+| Service              | Port                              | Stack |
+|----------------------|-----------------------------------|-------|
+| MQTT (Mosquitto)     | `1883` (MQTT), `9001` (WebSocket) | iot   |
+| InfluxDB             | `8086`                            | iot   |
+| Node-RED             | `1880`                            | iot   |
+| Grafana              | `3000`                            | iot   |
+| n8n                  | `5678`                            | ai    |
+| Letta                | `8283`                            | ai    |
+| Ollama               | `11434`                           | ai    |
+| Edge Impulse Runner  | `8080` (health endpoint)          | edge  |
+| **p4n4 REST API**    | **`8000`**                        | **api** |
 
 ---
 
 ## Source Repos
 
-Stack files are fetched from these repos at `p4n4 init` time. URLs are defined in [`p4n4/sources.yaml`](p4n4/sources.yaml) and can be overridden per-layer via `--source-iot` (IoT) and `--source-ai` (AI), or by editing the file to point at a fork or mirror.
+Stack files are fetched from these repos at `p4n4 init` time. URLs are defined in [`p4n4/sources.yaml`](p4n4/sources.yaml) and can be overridden per-layer via `--source-iot` / `--source-ai`, or by editing the file to point at a fork or mirror.
 
-| Layer | Repo |
-|-------|------|
-| IoT   | https://github.com/raisga/p4n4-iot |
-| AI    | https://github.com/raisga/p4n4-ai |
-| Edge  | https://github.com/raisga/p4n4-edge |
+| Layer     | Repo |
+|-----------|------|
+| IoT       | https://github.com/raisga/p4n4-iot |
+| AI        | https://github.com/raisga/p4n4-ai |
+| Edge      | https://github.com/raisga/p4n4-edge |
+| Templates | https://github.com/raisga/p4n4-templates |
 
 ---
 
 ## Resources
 
 - [p4n4.com](https://p4n4.com) — Platform overview
+- [Full documentation](https://raisga.github.io/p4n4-docs) — MkDocs reference site
 - [p4n4-iot](https://github.com/raisga/p4n4-iot) — MING stack source
+- [p4n4-ai](https://github.com/raisga/p4n4-ai) — GenAI stack source
+- [p4n4-edge](https://github.com/raisga/p4n4-edge) — Edge AI stack source
+- [p4n4-templates](https://github.com/raisga/p4n4-templates) — Community template registry
 - [MING Stack Tutorial](https://github.com/ArthurKretzer/tutorial-p4n4-stack) — IIoT data stack tutorial (XIV SBESC, 2024)
 - [MING Stack with Edge Impulse](https://www.edgeimpulse.com/blog/accelerate-edge-ai-application-development-with-the-p4n4-stack-edge-impulse/) — Integration guide
 - [Edge Impulse Linux SDK (Python)](https://github.com/edgeimpulse/linux-sdk-python)
-- [Eclipse Mosquitto](https://mosquitto.org/)
-- [InfluxDB Documentation](https://docs.influxdata.com/)
-- [Node-RED Documentation](https://nodered.org/docs/)
-- [Grafana Documentation](https://grafana.com/docs/)
+- [Eclipse Mosquitto](https://mosquitto.org/) · [InfluxDB](https://docs.influxdata.com/) · [Node-RED](https://nodered.org/docs/) · [Grafana](https://grafana.com/docs/)
+- [Ollama](https://github.com/ollama/ollama) · [Letta](https://docs.letta.com/) · [n8n](https://docs.n8n.io/)
 
 ---
 
 ## License
 
-This project is licensed under the [Apache License 2.0](LICENSE).
+This project is licensed under the [MIT License](LICENSE).
