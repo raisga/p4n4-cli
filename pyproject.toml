@@ -8,13 +8,14 @@ version = "0.1.0"
 description = "CLI tool for bootstrapping and managing P4N4 projects"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = { text = "MIT" }
+authors = [{ name = "RAISGA", email = "jraleman@raisga.com" }]
 keywords = ["iot", "edge-ai", "docker", "cli", "scaffolding"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: Apache Software License",
+  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -46,6 +47,9 @@ Issues = "https://github.com/raisga/p4n4-cli/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["p4n4"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["test-project", ".github"]
 
 [tool.ruff]
 line-length = 100
