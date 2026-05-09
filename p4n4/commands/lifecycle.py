@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from pathlib import Path
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -14,9 +15,7 @@ from p4n4.utils import manifest as mf
 console = Console()
 
 
-def _project_dir() -> "Path":
-    from pathlib import Path
-
+def _project_dir() -> Path:
     manifest_path = mf.find()
     if manifest_path is None:
         console.print(
@@ -31,7 +30,9 @@ def up(
     edge: Annotated[bool, typer.Option("--edge", help="Start Edge AI services only.")] = False,
     ai: Annotated[bool, typer.Option("--ai", help="Start Gen AI services only.")] = False,
     build: Annotated[bool, typer.Option("--build", help="Rebuild images before starting.")] = False,
-    pull: Annotated[bool, typer.Option("--pull", help="Pull latest images before starting.")] = False,
+    pull: Annotated[
+        bool, typer.Option("--pull", help="Pull latest images before starting.")
+    ] = False,
 ) -> None:
     """Start the project stack."""
     cwd = _project_dir()
@@ -114,11 +115,9 @@ def status() -> None:
 
 
 def logs(
-    service: Annotated[Optional[str], typer.Argument(help="Service name to stream.")] = None,
-    tail: Annotated[Optional[int], typer.Option("--tail", help="Lines from end of log.")] = 100,
-    no_follow: Annotated[
-        bool, typer.Option("--no-follow", help="Print once and exit.")
-    ] = False,
+    service: Annotated[str | None, typer.Argument(help="Service name to stream.")] = None,
+    tail: Annotated[int | None, typer.Option("--tail", help="Lines from end of log.")] = 100,
+    no_follow: Annotated[bool, typer.Option("--no-follow", help="Print once and exit.")] = False,
 ) -> None:
     """Stream logs from services."""
     cwd = _project_dir()

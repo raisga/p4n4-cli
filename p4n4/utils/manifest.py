@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 MANIFEST_FILE = ".p4n4.json"
@@ -33,5 +33,5 @@ def create(project: str, layers: list[str]) -> dict:
         "schema_version": SCHEMA_VERSION,
         "project": project,
         "layers": layers,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }

@@ -23,6 +23,7 @@ _AI_SOURCE = str(Path(__file__).parent.parent.parent / "p4n4-ai")
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture()
 def iot_project(tmp_path):
     """Scaffold a fresh IoT project and return its directory."""
@@ -51,6 +52,7 @@ def ai_project(tmp_path):
 
 # ── Basic CLI ─────────────────────────────────────────────────────────────────
 
+
 def test_version():
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
@@ -64,6 +66,7 @@ def test_help():
 
 
 # ── p4n4 init — IoT ──────────────────────────────────────────────────────────
+
 
 def test_init_iot_exits_cleanly():
     with runner.isolated_filesystem():
@@ -100,8 +103,16 @@ def test_init_iot_manifest_content(iot_project):
 
 def test_init_iot_env_has_required_keys(iot_project):
     env = envutil.load(iot_project / ".env")
-    for key in ("TZ", "INFLUXDB_USERNAME", "INFLUXDB_PASSWORD", "INFLUXDB_ORG",
-                 "INFLUXDB_TOKEN", "INFLUXDB_BUCKET", "GRAFANA_USER", "GRAFANA_PASSWORD"):
+    for key in (
+        "TZ",
+        "INFLUXDB_USERNAME",
+        "INFLUXDB_PASSWORD",
+        "INFLUXDB_ORG",
+        "INFLUXDB_TOKEN",
+        "INFLUXDB_BUCKET",
+        "GRAFANA_USER",
+        "GRAFANA_PASSWORD",
+    ):
         assert env.get(key), f".env missing key: {key}"
 
 
@@ -113,12 +124,15 @@ def test_init_iot_scripts_are_executable(iot_project):
 def test_init_fails_if_directory_exists():
     with runner.isolated_filesystem():
         runner.invoke(app, ["init", "proj", "--no-interactive", "--source-iot", _IOT_SOURCE])
-        result = runner.invoke(app, ["init", "proj", "--no-interactive", "--source-iot", _IOT_SOURCE])
+        result = runner.invoke(
+            app, ["init", "proj", "--no-interactive", "--source-iot", _IOT_SOURCE]
+        )
         assert result.exit_code != 0
         assert "already exists" in result.output
 
 
 # ── p4n4 init — AI ───────────────────────────────────────────────────────────
+
 
 def test_init_ai_exits_cleanly():
     with runner.isolated_filesystem():
@@ -153,9 +167,16 @@ def test_init_ai_manifest_content(ai_project):
 
 def test_init_ai_env_has_required_keys(ai_project):
     env = envutil.load(ai_project / ".env")
-    for key in ("LETTA_SERVER_PASSWORD", "N8N_BASIC_AUTH_USER", "N8N_BASIC_AUTH_PASSWORD",
-                 "N8N_ENCRYPTION_KEY", "N8N_HOST", "INFLUXDB_TOKEN", "INFLUXDB_ORG",
-                 "INFLUXDB_BUCKET"):
+    for key in (
+        "LETTA_SERVER_PASSWORD",
+        "N8N_BASIC_AUTH_USER",
+        "N8N_BASIC_AUTH_PASSWORD",
+        "N8N_ENCRYPTION_KEY",
+        "N8N_HOST",
+        "INFLUXDB_TOKEN",
+        "INFLUXDB_ORG",
+        "INFLUXDB_BUCKET",
+    ):
         assert env.get(key), f".env missing key: {key}"
 
 
@@ -165,6 +186,7 @@ def test_init_ai_scripts_are_executable(ai_project):
 
 
 # ── p4n4 validate ─────────────────────────────────────────────────────────────
+
 
 def test_validate_requires_manifest():
     with runner.isolated_filesystem():
@@ -224,6 +246,7 @@ def test_validate_fails_on_missing_env_key(iot_project):
 
 # ── p4n4 secret ───────────────────────────────────────────────────────────────
 
+
 def test_secret_requires_manifest():
     with runner.isolated_filesystem():
         result = runner.invoke(app, ["secret"])
@@ -260,6 +283,7 @@ def test_secret_rotates_ai_secrets(ai_project):
 
 
 # ── Stack lifecycle (require manifest) ────────────────────────────────────────
+
 
 def test_up_requires_manifest():
     with runner.isolated_filesystem():

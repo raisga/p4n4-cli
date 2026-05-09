@@ -157,7 +157,7 @@ def cmd(
         console.print(f"[red]Error:[/red] Directory '[bold]{project_name}[/bold]' already exists.")
         raise typer.Exit(1)
 
-    layers = ["iot", "ai", "edge"] if layer == "all" else [l.strip() for l in layer.split(",")]
+    layers = ["iot", "ai", "edge"] if layer == "all" else [lyr.strip() for lyr in layer.split(",")]
 
     console.print(
         Panel(
@@ -266,8 +266,4 @@ def cmd(
         if f.is_file():
             console.print(f"    {f.relative_to(project_dir)}")
 
-    console.print(
-        f"\n[bold]Next steps:[/bold]\n"
-        f"  cd {project_name}\n"
-        f"  p4n4 up\n"
-    )
+    console.print(f"\n[bold]Next steps:[/bold]\n  cd {project_name}\n  p4n4 up\n")

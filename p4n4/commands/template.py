@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -13,7 +13,7 @@ console = Console()
 
 @app.command("search")
 def search(
-    query: Annotated[Optional[str], typer.Argument(help="Search term.")] = None,
+    query: Annotated[str | None, typer.Argument(help="Search term.")] = None,
 ) -> None:
     """Search the community template registry."""
     console.print("[yellow]p4n4 template search[/yellow] — not yet implemented")

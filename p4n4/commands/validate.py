@@ -57,8 +57,7 @@ def cmd() -> None:
     manifest_path = mf.find()
     if manifest_path is None:
         console.print(
-            "[red]✗[/red] No [bold].p4n4.json[/bold] found. "
-            "Not inside a p4n4 project directory."
+            "[red]✗[/red] No [bold].p4n4.json[/bold] found. Not inside a p4n4 project directory."
         )
         raise typer.Exit(1)
 
