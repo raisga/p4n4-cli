@@ -1,4 +1,4 @@
-"""p4n4 up / down / status / logs — stack lifecycle commands."""
+"""p4n4 up / down / status / logs: stack lifecycle commands."""
 
 from __future__ import annotations
 
@@ -27,36 +27,39 @@ def _project_dir() -> Path:
 
 
 def up(
-    edge: Annotated[bool, typer.Option("--edge", help="Start Edge AI services only.")] = False,
-    ai: Annotated[bool, typer.Option("--ai", help="Start Gen AI services only.")] = False,
+    stack: Annotated[str | None, typer.Argument(help="Stack to start: iot, ai, edge.")] = None,
     build: Annotated[bool, typer.Option("--build", help="Rebuild images before starting.")] = False,
     pull: Annotated[
         bool, typer.Option("--pull", help="Pull latest images before starting.")
     ] = False,
+    no_detach: Annotated[
+        bool, typer.Option("--no-detach", help="Run in foreground (do not detach).")
+    ] = False,
 ) -> None:
-    """Start the project stack."""
+    """Start one or all enabled stacks in dependency order."""
     cwd = _project_dir()
-    console.print(f"[cyan]Starting stack in[/cyan] [bold]{cwd}[/bold] …")
-    rc = compose.up(cwd, build=build, pull=pull)
+    console.print(f"[cyan]Starting stack in[/cyan] [bold]{cwd}[/bold] ...")
+    rc = compose.up(cwd, build=build, pull=pull, detach=not no_detach)
     if rc != 0:
         raise typer.Exit(rc)
 
 
 def down(
+    stack: Annotated[str | None, typer.Argument(help="Stack to stop: iot, ai, edge.")] = None,
     volumes: Annotated[
         bool, typer.Option("--volumes", help="Also remove persistent data volumes.")
     ] = False,
 ) -> None:
-    """Stop all running services for the current project."""
+    """Stop one or all running stacks."""
     cwd = _project_dir()
     if volumes:
         confirmed = typer.confirm(
-            "⚠️  This will delete all persistent volumes (data loss). Continue?",
+            "This will delete all persistent volumes (data loss). Continue?",
             default=False,
         )
         if not confirmed:
             raise typer.Abort()
-    console.print(f"[cyan]Stopping stack in[/cyan] [bold]{cwd}[/bold] …")
+    console.print(f"[cyan]Stopping stack in[/cyan] [bold]{cwd}[/bold] ...")
     rc = compose.down(cwd, volumes=volumes)
     if rc != 0:
         raise typer.Exit(rc)
@@ -71,7 +74,7 @@ def status() -> None:
         console.print("[yellow]No services found. Is the stack running?[/yellow]")
         return
 
-    table = Table(title=f"Stack status — {cwd.name}", show_lines=False)
+    table = Table(title=f"Stack status: {cwd.name}", show_lines=False)
     table.add_column("Service", style="bold")
     table.add_column("Status")
     table.add_column("Health")

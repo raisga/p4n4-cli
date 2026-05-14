@@ -1,4 +1,4 @@
-"""Tests — verify CLI behaviour for both IoT and AI layers."""
+"""Tests: verify CLI behaviour for both IoT and AI layers."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def test_help():
     assert "p4n4" in result.output
 
 
-# ── p4n4 init — IoT ──────────────────────────────────────────────────────────
+# ── p4n4 init: IoT ───────────────────────────────────────────────────────────
 
 
 def test_init_iot_exits_cleanly():
@@ -131,7 +131,7 @@ def test_init_fails_if_directory_exists():
         assert "already exists" in result.output
 
 
-# ── p4n4 init — AI ───────────────────────────────────────────────────────────
+# ── p4n4 init: AI ────────────────────────────────────────────────────────────
 
 
 def test_init_ai_exits_cleanly():
@@ -249,7 +249,7 @@ def test_validate_fails_on_missing_env_key(iot_project):
 
 def test_secret_requires_manifest():
     with runner.isolated_filesystem():
-        result = runner.invoke(app, ["secret"])
+        result = runner.invoke(app, ["secret", "rotate"])
         assert result.exit_code != 0
         assert ".p4n4.json" in result.output
 
@@ -259,7 +259,7 @@ def test_secret_rotates_iot_secrets(iot_project):
     old_cwd = os.getcwd()
     os.chdir(iot_project)
     try:
-        result = runner.invoke(app, ["secret"], input="y\n", catch_exceptions=False)
+        result = runner.invoke(app, ["secret", "rotate"], input="y\n", catch_exceptions=False)
     finally:
         os.chdir(old_cwd)
     assert result.exit_code == 0, result.output
@@ -273,7 +273,7 @@ def test_secret_rotates_ai_secrets(ai_project):
     old_cwd = os.getcwd()
     os.chdir(ai_project)
     try:
-        result = runner.invoke(app, ["secret"], input="y\n", catch_exceptions=False)
+        result = runner.invoke(app, ["secret", "rotate"], input="y\n", catch_exceptions=False)
     finally:
         os.chdir(old_cwd)
     assert result.exit_code == 0, result.output

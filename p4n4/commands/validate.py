@@ -1,4 +1,4 @@
-"""p4n4 validate — validate project configuration."""
+"""p4n4 validate: validate project configuration."""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ def cmd() -> None:
             f"(got {data.get('schema_version')}, expected {mf.SCHEMA_VERSION})"
         )
     else:
-        console.print("[green]✓[/green] .p4n4.json — valid")
+        console.print("[green]✓[/green] .p4n4.json: valid")
 
     layers: list[str] = data.get("layers", [])
 
@@ -101,7 +101,7 @@ def cmd() -> None:
                 if not env.get(key):
                     errors.append(f".env missing required key: {key}")
         if not errors:
-            console.print("[green]✓[/green] .env — all required keys present")
+            console.print("[green]✓[/green] .env: all required keys present")
     else:
         errors.append(".env file not found")
 
@@ -110,7 +110,7 @@ def cmd() -> None:
         console.print()
         for err in errors:
             console.print(f"[red]✗[/red] {err}")
-        console.print(f"\n[red]Validation failed[/red] — {len(errors)} issue(s) found.")
+        console.print(f"\n[red]Validation failed[/red] - {len(errors)} issue(s) found.")
         raise typer.Exit(1)
     else:
         console.print("\n[green]All checks passed.[/green]")

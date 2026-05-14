@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "p4n4"
-version = "0.0.1"
+version = "0.1.1"
 description = "CLI tool for bootstrapping and managing P4N4 projects"
 readme = "README.md"
 requires-python = ">=3.11"

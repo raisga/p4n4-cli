@@ -12,8 +12,10 @@ def _base(args: list[str], cwd: Path, *, stream: bool = True) -> int:
     return result.returncode
 
 
-def up(cwd: Path, build: bool = False, pull: bool = False) -> int:
-    args = ["up", "-d"]
+def up(cwd: Path, build: bool = False, pull: bool = False, detach: bool = True) -> int:
+    args = ["up"]
+    if detach:
+        args.append("-d")
     if build:
         args.append("--build")
     if pull:

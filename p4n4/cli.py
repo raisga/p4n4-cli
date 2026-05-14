@@ -1,4 +1,4 @@
-"""p4n4 CLI — entrypoint and command registration."""
+"""p4n4 CLI: entrypoint and command registration."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ console = Console()
 # ── sub-apps ──────────────────────────────────────────────────────────────────
 app.add_typer(ei.app, name="ei")
 app.add_typer(template.app, name="template")
+app.add_typer(secret.app, name="secret")
 
 # ── top-level commands ────────────────────────────────────────────────────────
 app.command("init")(init.cmd)
@@ -28,7 +29,6 @@ app.command("up")(lifecycle.up)
 app.command("down")(lifecycle.down)
 app.command("status")(lifecycle.status)
 app.command("logs")(lifecycle.logs)
-app.command("secret")(secret.cmd)
 app.command("validate")(validate.cmd)
 app.command("upgrade")(upgrade.cmd)
 
@@ -50,4 +50,4 @@ def main(
         help="Show version and exit.",
     ),
 ) -> None:
-    """p4n4 — Platform for Nexus Neural Network Nodes."""
+    """p4n4: Platform for Nexus Neural Node Network"""

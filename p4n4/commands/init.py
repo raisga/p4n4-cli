@@ -1,4 +1,4 @@
-"""p4n4 init — interactive project scaffold wizard."""
+"""p4n4 init: interactive project scaffold wizard."""
 
 from __future__ import annotations
 
@@ -108,7 +108,7 @@ def _scaffold_layer(
             for script in scripts_dir.glob("*.sh"):
                 script.chmod(script.stat().st_mode | 0o111)
 
-        # Write .env — values override the .env.example template from the repo
+        # Write .env: values override the .env.example template from the repo
         env_template = src / ".env.example"
         envutil.write(project_dir / ".env", env_values, template_path=env_template)
     finally:
@@ -161,7 +161,7 @@ def cmd(
 
     console.print(
         Panel(
-            f"[bold cyan]p4n4 init[/bold cyan] — scaffolding [bold]{project_name}[/bold]",
+            f"[bold cyan]p4n4 init[/bold cyan]: scaffolding [bold]{project_name}[/bold]",
             expand=False,
         )
     )

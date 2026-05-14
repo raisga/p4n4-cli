@@ -1,4 +1,4 @@
-"""p4n4 add — add a layer or service to an existing project."""
+"""p4n4 add: add a layer or service to an existing project."""
 
 from __future__ import annotations
 
@@ -14,5 +14,5 @@ def cmd(
     component: Annotated[str, typer.Argument(help="Layer or service to add (e.g. ai, edge).")],
 ) -> None:
     """Add a layer or service to the current project."""
-    console.print(f"[yellow]p4n4 add[/yellow] — not yet implemented (component: {component})")
+    console.print(f"[yellow]p4n4 add[/yellow]: not yet implemented (component: {component})")
     raise typer.Exit(1)

@@ -1,4 +1,4 @@
-"""p4n4 template — community template registry commands."""
+"""p4n4 template -- community template registry commands."""
 
 from __future__ import annotations
 
@@ -16,14 +16,21 @@ def search(
     query: Annotated[str | None, typer.Argument(help="Search term.")] = None,
 ) -> None:
     """Search the community template registry."""
-    console.print("[yellow]p4n4 template search[/yellow] — not yet implemented")
+    console.print("[yellow]p4n4 template search[/yellow]: not yet implemented")
     raise typer.Exit(1)
 
 
-@app.command("apply")
-def apply(
+@app.command("install")
+def install(
     name: Annotated[str, typer.Argument(help="Template name or short-name.")],
 ) -> None:
-    """Apply a community template to the current project."""
-    console.print(f"[yellow]p4n4 template apply[/yellow] — not yet implemented (template: {name})")
+    """Install a template into the current project."""
+    console.print(f"[yellow]p4n4 template install[/yellow]: not yet implemented (template: {name})")
+    raise typer.Exit(1)
+
+
+@app.command("list")
+def list_cmd() -> None:
+    """Show installed templates."""
+    console.print("[yellow]p4n4 template list[/yellow]: not yet implemented")
     raise typer.Exit(1)
