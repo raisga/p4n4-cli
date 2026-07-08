@@ -31,7 +31,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - run: pip install -e ".[dev]"
+      - run: pip install "p4n4-lib @ git+https://github.com/raisga/p4n4-lib.git" -e ".[dev]"
       - name: Checkout stack source repos
         run: |
           git clone --depth 1 https://github.com/raisga/p4n4-iot.git ../p4n4-iot

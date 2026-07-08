@@ -2,41 +2,20 @@
 
 from __future__ import annotations
 
-import secrets
 import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 from typing import Annotated
 
 import questionary
 import typer
+from p4n4_lib import layout, scaffold
+from p4n4_lib import manifest as mf
+from p4n4_lib import secrets as secretutil
+from p4n4_lib.layers import LAYERS
 from rich.console import Console
 from rich.panel import Panel
 
-from p4n4 import sources
-from p4n4.utils import env as envutil
-from p4n4.utils import manifest as mf
-
 console = Console()
-
-# Files/dirs to copy from the iot repo into the new project
-_IOT_COPY = [
-    "docker-compose.yml",
-    "config",
-    "scripts",
-]
-
-# Files/dirs to copy from the ai repo into the new project
-_AI_COPY = [
-    "docker-compose.yml",
-    "config",
-    "scripts",
-]
-
-
-def _token(n: int = 32) -> str:
-    return secrets.token_hex(n)
 
 
 def _ask(prompt: str, default: str) -> str:
@@ -47,83 +26,21 @@ def _ask_password(prompt: str, default: str) -> str:
     return questionary.password(prompt).ask() or default
 
 
-def _fetch_source(repo_url: str, source: str | None, prefix: str) -> tuple[Path, str | None]:
-    """
-    Return a (Path, tmpdir_or_None) to a stack source directory.
-
-    If `source` is a local path it is used directly; otherwise the repo is
-    cloned at shallow depth into a temp dir that the caller must clean up.
-    """
-    if source:
-        path = Path(source).expanduser().resolve()
-        if not path.exists():
-            raise typer.BadParameter(f"--source path does not exist: {path}")
-        return path, None
-
-    tmp = tempfile.mkdtemp(prefix=prefix)
-    console.print(f"  Cloning [bold]{repo_url}[/bold] …")
-    result = subprocess.run(
-        ["git", "clone", "--depth", "1", repo_url, tmp],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise RuntimeError(
-            f"git clone failed:\n{result.stderr.strip()}\n\n"
-            f"Tip: use --source <path> to scaffold from a local checkout."
-        )
-    return Path(tmp), tmp
-
-
-def _fetch_iot_source(source: str | None) -> tuple[Path, str | None]:
-    return _fetch_source(sources.iot_repo_url, source, "p4n4-iot-")
-
-
-def _fetch_ai_source(source: str | None) -> tuple[Path, str | None]:
-    return _fetch_source(sources.ai_repo_url, source, "p4n4-ai-")
-
-
-def _scaffold_layer(
+def _scaffold(
     project_dir: Path,
-    copy_list: list[str],
+    layers: list[str],
+    layer_name: str,
     env_values: dict[str, str],
-    src: Path,
-    tmpdir: str | None,
+    source: str | None,
 ) -> None:
-    try:
-        for name in copy_list:
-            s = src / name
-            if not s.exists():
-                raise FileNotFoundError(f"Expected '{name}' in source repo but it was not found.")
-            d = project_dir / name
-            if s.is_dir():
-                shutil.copytree(s, d)
-            else:
-                shutil.copy2(s, d)
-
-        # Make shell scripts executable
-        scripts_dir = project_dir / "scripts"
-        if scripts_dir.is_dir():
-            for script in scripts_dir.glob("*.sh"):
-                script.chmod(script.stat().st_mode | 0o111)
-
-        # Write .env: values override the .env.example template from the repo
-        env_template = src / ".env.example"
-        envutil.write(project_dir / ".env", env_values, template_path=env_template)
-    finally:
-        if tmpdir:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-def _scaffold_iot(project_dir: Path, env_values: dict[str, str], source: str | None) -> None:
-    src, tmpdir = _fetch_iot_source(source)
-    _scaffold_layer(project_dir, _IOT_COPY, env_values, src, tmpdir)
-
-
-def _scaffold_ai(project_dir: Path, env_values: dict[str, str], source: str | None) -> None:
-    src, tmpdir = _fetch_ai_source(source)
-    _scaffold_layer(project_dir, _AI_COPY, env_values, src, tmpdir)
+    """Scaffold one layer into its layout directory (project root, or a
+    per-layer subdirectory for multi-layer projects)."""
+    layer = LAYERS[layer_name]
+    dest = layout.layer_dir(project_dir, layers, layer_name)
+    dest.mkdir(parents=True, exist_ok=True)
+    if source is None:
+        console.print(f"  Cloning [bold]{layer.repo_url}[/bold] …")
+    scaffold.scaffold_layer(dest, layer, env_values, source=source)
 
 
 def cmd(
@@ -170,12 +87,12 @@ def cmd(
     if no_interactive:
         org = "ming"
         tz = "UTC"
-        influx_password = _token(12)
-        influx_token = _token(32)
-        grafana_password = _token(12)
-        letta_password = _token(12)
-        n8n_password = _token(12)
-        n8n_encryption_key = _token(16)
+        influx_password = secretutil.token(12)
+        influx_token = secretutil.token(32)
+        grafana_password = secretutil.token(12)
+        letta_password = secretutil.token(12)
+        n8n_password = secretutil.token(12)
+        n8n_encryption_key = secretutil.token(16)
         n8n_host = "localhost"
     else:
         console.print("\n[dim]Press Enter to accept defaults.[/dim]\n")
@@ -183,35 +100,35 @@ def cmd(
         tz = _ask("Timezone (TZ database name)", "UTC")
         influx_password = _ask_password(
             "InfluxDB admin password (leave blank to auto-generate)",
-            _token(12),
+            secretutil.token(12),
         )
         influx_token = _ask_password(
             "InfluxDB API token (leave blank to auto-generate)",
-            _token(32),
+            secretutil.token(32),
         )
         grafana_password = _ask_password(
             "Grafana admin password (leave blank to auto-generate)",
-            _token(12),
+            secretutil.token(12),
         )
         if "ai" in layers:
             console.print("\n[dim]GenAI stack configuration:[/dim]\n")
             letta_password = _ask_password(
                 "Letta server password (leave blank to auto-generate)",
-                _token(12),
+                secretutil.token(12),
             )
             n8n_password = _ask_password(
                 "n8n admin password (leave blank to auto-generate)",
-                _token(12),
+                secretutil.token(12),
             )
             n8n_encryption_key = _ask_password(
                 "n8n encryption key (leave blank to auto-generate, must be 32+ chars)",
-                _token(16),
+                secretutil.token(16),
             )
             n8n_host = _ask("n8n hostname (for webhooks)", "localhost")
         else:
-            letta_password = _token(12)
-            n8n_password = _token(12)
-            n8n_encryption_key = _token(16)
+            letta_password = secretutil.token(12)
+            n8n_password = secretutil.token(12)
+            n8n_encryption_key = secretutil.token(16)
             n8n_host = "localhost"
 
     iot_env_values: dict[str, str] = {
@@ -247,10 +164,10 @@ def cmd(
 
     try:
         if "iot" in layers:
-            _scaffold_iot(project_dir, iot_env_values, source)
+            _scaffold(project_dir, layers, "iot", iot_env_values, source)
 
         if "ai" in layers:
-            _scaffold_ai(project_dir, ai_env_values, ai_source)
+            _scaffold(project_dir, layers, "ai", ai_env_values, ai_source)
 
         mf.save(project_dir / mf.MANIFEST_FILE, mf.create(project_name, layers))
 

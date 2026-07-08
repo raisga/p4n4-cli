@@ -256,6 +256,32 @@ my-ai-project/
     └── selector.sh
 ```
 
+**Multi-layer (`--layer iot,ai` or `--layer all`):**
+
+Each layer gets its own subdirectory with its own `docker-compose.yml`, `config/`,
+`scripts/`, and `.env`, so the stacks run as separate Compose projects (p4n4-ai
+attaches to the `p4n4-net` network that p4n4-iot creates). Shared values such as
+`INFLUXDB_TOKEN` are written identically to every layer's `.env`.
+
+```
+my-project/
+├── .p4n4.json                       # Manifest (lists all active layers)
+├── iot/
+│   ├── docker-compose.yml
+│   ├── .env
+│   ├── config/ …
+│   └── scripts/ …
+└── ai/
+    ├── docker-compose.yml
+    ├── .env
+    ├── config/ …
+    └── scripts/ …
+```
+
+`p4n4 up` / `down` operate on all stacks in dependency order (iot → ai → edge;
+reversed for `down`), or on one stack via `p4n4 up ai`. `p4n4 logs` needs
+`--stack <name>` (or `--no-follow`) in multi-layer projects.
+
 ---
 
 ## Commands
@@ -569,7 +595,7 @@ INFLUXDB_BUCKET=raw_telemetry
 
 ## Source Repos
 
-Stack files are fetched from these repos at `p4n4 init` time. URLs are defined in [`p4n4/sources.yaml`](p4n4/sources.yaml) and can be overridden per-layer via `--source-iot` / `--source-ai`, or by editing the file to point at a fork or mirror.
+Stack files are fetched from these repos at `p4n4 init` time. URLs are defined in `p4n4_lib/sources.yaml` (shipped with [`p4n4-lib`](https://github.com/raisga/p4n4-lib)) and can be overridden per-layer via `--source-iot` / `--source-ai`, or by editing the file to point at a fork or mirror.
 
 | Layer     | Repo |
 |-----------|------|

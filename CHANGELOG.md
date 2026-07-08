@@ -7,6 +7,41 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- `p4n4 init --layer iot,ai` (and `--layer all`) no longer crashes on file collisions:
+  multi-layer projects now scaffold each layer into its own subdirectory
+  (`<project>/iot/`, `<project>/ai/`) with its own compose file, config, and `.env`,
+  matching how the stacks are designed to run (separate Compose projects sharing the
+  `p4n4-net` network). Single-layer projects keep the flat layout.
+
+### Added
+
+- `p4n4 up <stack>` / `p4n4 down <stack>` now actually filter to one stack; with no
+  argument they run all enabled stacks in dependency order (iot → ai → edge, reversed
+  for `down`)
+- `p4n4 logs --stack <name>` to pick a stack in multi-layer projects (required when
+  following logs; `--no-follow` dumps all stacks)
+- `p4n4 status` prints one table per stack in multi-layer projects
+- `p4n4 secret show` gains a Stack column in multi-layer projects; `p4n4 secret rotate`
+  rotates across all layer `.env` files, keeping shared keys (e.g. `INFLUXDB_TOKEN`)
+  identical in every file
+- `p4n4 validate` checks each layer's files and `.env` in its own directory, with
+  `iot/`-style prefixes in multi-layer output
+
+### Changed
+
+- Shared, framework-agnostic code extracted into the new [`p4n4-lib`](https://github.com/raisga/p4n4-lib)
+  package, now a dependency: manifest, dotenv, Docker Compose wrappers, layer registry
+  (repo URLs, copy paths, required files/env keys), scaffolding, validation, and secret
+  generation all live in `p4n4_lib`
+- `p4n4/utils/`, `p4n4/sources.py`, and `p4n4/sources.yaml` removed in favour of `p4n4_lib`
+- Duplicate token generators in `init`/`secret` unified as `p4n4_lib.secrets`
+- "No .p4n4.json found" error message unified across commands via `p4n4.project.require_manifest`
+- Tests locate local stack checkouts via sibling repos (CI) or `stacks/<name>` (monorepo)
+
 ## [0.1.1] - 2026-05-14
 
 ### Fixed

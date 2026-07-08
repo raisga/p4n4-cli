@@ -2,65 +2,53 @@
 
 from __future__ import annotations
 
-import secrets
 from pathlib import Path
 
 import typer
+from p4n4_lib import env as envutil
+from p4n4_lib import secrets as secretutil
 from rich.console import Console
 from rich.table import Table
 
-from p4n4.utils import env as envutil
-from p4n4.utils import manifest as mf
+from p4n4.project import require_compose_dirs
 
 app = typer.Typer(help="Manage project secrets.")
 console = Console()
 
-_ROTATABLE_KEYS = [
-    # IoT layer
-    "INFLUXDB_PASSWORD",
-    "INFLUXDB_TOKEN",
-    "GRAFANA_PASSWORD",
-    # AI layer
-    "LETTA_SERVER_PASSWORD",
-    "N8N_BASIC_AUTH_PASSWORD",
-    "N8N_ENCRYPTION_KEY",
-]
 
-
-def _gen_secret(n: int = 32) -> str:
-    return secrets.token_hex(n)
-
-
-def _require_project() -> tuple[Path, Path]:
-    manifest_path = mf.find()
-    if manifest_path is None:
-        console.print(
-            "[red]Error:[/red] No [bold].p4n4.json[/bold] found. "
-            "Not inside a p4n4 project directory."
-        )
-        raise typer.Exit(1)
-    env_path = manifest_path.parent / ".env"
-    if not env_path.exists():
+def _require_env_files() -> list[tuple[str, Path]]:
+    """Return (layer, .env path) pairs for every stack that has one."""
+    files = [
+        (name, path / envutil.ENV_FILE)
+        for name, path in require_compose_dirs()
+        if (path / envutil.ENV_FILE).exists()
+    ]
+    if not files:
         console.print("[red]Error:[/red] No [bold].env[/bold] file found in project directory.")
         raise typer.Exit(1)
-    return manifest_path, env_path
+    return files
 
 
 @app.command("show")
 def show() -> None:
     """Show masked secrets from .env."""
-    _, env_path = _require_project()
-    env = envutil.load(env_path)
+    files = _require_env_files()
+    multi = len(files) > 1
 
     table = Table(title="Project secrets (.env)", show_header=True)
+    if multi:
+        table.add_column("Stack", style="dim")
     table.add_column("Key", style="bold")
     table.add_column("Value")
 
-    for key in _ROTATABLE_KEYS:
-        if key in env:
-            val = env[key]
-            masked = val[:4] + "*" * max(0, len(val) - 4) if len(val) > 4 else "****"
-            table.add_row(key, masked)
+    for name, env_path in files:
+        env = envutil.load(env_path)
+        for key in secretutil.ROTATABLE_KEYS:
+            if key in env:
+                val = env[key]
+                masked = val[:4] + "*" * max(0, len(val) - 4) if len(val) > 4 else "****"
+                row = [name] if multi else []
+                table.add_row(*row, key, masked)
 
     console.print(table)
 
@@ -68,13 +56,16 @@ def show() -> None:
 @app.command("rotate")
 def rotate() -> None:
     """Re-generate all password/token values in .env."""
-    _, env_path = _require_project()
-    env = envutil.load(env_path)
-    new_values: dict[str, str] = {}
+    files = _require_env_files()
+    envs = [(name, path, envutil.load(path)) for name, path in files]
 
-    for key in _ROTATABLE_KEYS:
-        if key in env:
-            new_values[key] = _gen_secret(16 if "PASSWORD" in key else 32)
+    # One new value per key, shared across stacks so cross-stack keys
+    # (e.g. INFLUXDB_TOKEN in both iot and ai) stay in sync
+    new_values: dict[str, str] = {
+        key: secretutil.rotation_value(key)
+        for key in secretutil.ROTATABLE_KEYS
+        if any(key in env for _, _, env in envs)
+    }
 
     if not new_values:
         console.print("[yellow]No rotatable secrets found in .env.[/yellow]")
@@ -91,8 +82,10 @@ def rotate() -> None:
     if not confirmed:
         raise typer.Abort()
 
-    updated = {**env, **new_values}
-    envutil.write(env_path, updated)
+    for _name, path, env in envs:
+        updates = {k: v for k, v in new_values.items() if k in env}
+        if updates:
+            envutil.write(path, {**env, **updates})
 
     console.print("\n[green]✓[/green] Secrets rotated in [bold].env[/bold]")
     console.print(
@@ -108,8 +101,7 @@ def generate() -> None:
     table.add_column("Key", style="bold")
     table.add_column("Value")
 
-    for key in _ROTATABLE_KEYS:
-        value = _gen_secret(16 if "PASSWORD" in key else 32)
-        table.add_row(key, value)
+    for key in secretutil.ROTATABLE_KEYS:
+        table.add_row(key, secretutil.rotation_value(key))
 
     console.print(table)

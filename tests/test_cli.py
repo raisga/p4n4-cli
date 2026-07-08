@@ -8,17 +8,33 @@ import stat
 from pathlib import Path
 
 import pytest
+from p4n4_lib import env as envutil
 from typer.testing import CliRunner
 
 from p4n4 import __version__
 from p4n4.cli import app
-from p4n4.utils import env as envutil
 
 runner = CliRunner()
 
+_REPO_ROOT = Path(__file__).parent.parent
+
+
+def _stack_source(name: str) -> str:
+    """Locate a local stack checkout: CI clones it as a sibling repo (p4n4-<name>);
+    the monorepo has it as a submodule under stacks/<name>."""
+    candidates = [
+        _REPO_ROOT.parent / f"p4n4-{name}",
+        _REPO_ROOT.parent.parent / "stacks" / name,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return str(candidates[0])
+
+
 # Local checkouts used as --source-iot / --source-ai (avoids network calls)
-_IOT_SOURCE = str(Path(__file__).parent.parent.parent / "p4n4-iot")
-_AI_SOURCE = str(Path(__file__).parent.parent.parent / "p4n4-ai")
+_IOT_SOURCE = _stack_source("iot")
+_AI_SOURCE = _stack_source("ai")
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -47,6 +63,29 @@ def ai_project(tmp_path):
         ["init", "proj-ai", "--layer", "ai", "--no-interactive", "--source-ai", _AI_SOURCE],
     )
     yield tmp_path / "proj-ai"
+    os.chdir(old_cwd)
+
+
+@pytest.fixture()
+def multi_project(tmp_path):
+    """Scaffold a fresh iot+ai project and return its directory."""
+    old_cwd = os.getcwd()
+    os.chdir(tmp_path)
+    runner.invoke(
+        app,
+        [
+            "init",
+            "proj-multi",
+            "--layer",
+            "iot,ai",
+            "--no-interactive",
+            "--source-iot",
+            _IOT_SOURCE,
+            "--source-ai",
+            _AI_SOURCE,
+        ],
+    )
+    yield tmp_path / "proj-multi"
     os.chdir(old_cwd)
 
 
@@ -183,6 +222,84 @@ def test_init_ai_env_has_required_keys(ai_project):
 def test_init_ai_scripts_are_executable(ai_project):
     for script in (ai_project / "scripts").glob("*.sh"):
         assert script.stat().st_mode & stat.S_IXUSR, f"Not executable: {script.name}"
+
+
+# ── p4n4 init: multi-layer ───────────────────────────────────────────────────
+
+
+def test_init_multi_layer_uses_per_layer_subdirs(multi_project):
+    assert (multi_project / ".p4n4.json").exists()
+    assert not (multi_project / "docker-compose.yml").exists()
+    for rel in (
+        "iot/docker-compose.yml",
+        "iot/.env",
+        "iot/config/mosquitto/mosquitto.conf",
+        "iot/scripts/init-buckets.sh",
+        "ai/docker-compose.yml",
+        "ai/.env",
+        "ai/config/letta/letta.conf",
+        "ai/scripts/pull-models.sh",
+    ):
+        assert (multi_project / rel).exists(), f"Missing: {rel}"
+
+
+def test_init_multi_layer_manifest_content(multi_project):
+    data = json.loads((multi_project / ".p4n4.json").read_text())
+    assert data["layers"] == ["iot", "ai"]
+
+
+def test_init_multi_layer_shares_influxdb_values(multi_project):
+    iot_env = envutil.load(multi_project / "iot" / ".env")
+    ai_env = envutil.load(multi_project / "ai" / ".env")
+    assert iot_env["INFLUXDB_TOKEN"] == ai_env["INFLUXDB_TOKEN"]
+    assert iot_env["INFLUXDB_ORG"] == ai_env["INFLUXDB_ORG"]
+
+
+def test_validate_passes_on_multi_layer_project(multi_project):
+    old_cwd = os.getcwd()
+    os.chdir(multi_project)
+    try:
+        result = runner.invoke(app, ["validate"], catch_exceptions=False)
+    finally:
+        os.chdir(old_cwd)
+    assert result.exit_code == 0, result.output
+    assert "All checks passed" in result.output
+
+
+def test_secret_rotate_multi_layer_keeps_shared_keys_in_sync(multi_project):
+    old_cwd = os.getcwd()
+    os.chdir(multi_project)
+    try:
+        result = runner.invoke(app, ["secret", "rotate"], input="y\n", catch_exceptions=False)
+    finally:
+        os.chdir(old_cwd)
+    assert result.exit_code == 0, result.output
+    iot_env = envutil.load(multi_project / "iot" / ".env")
+    ai_env = envutil.load(multi_project / "ai" / ".env")
+    assert iot_env["INFLUXDB_TOKEN"] == ai_env["INFLUXDB_TOKEN"]
+    assert ai_env["LETTA_SERVER_PASSWORD"]
+
+
+def test_logs_multi_layer_requires_stack_to_follow(multi_project):
+    old_cwd = os.getcwd()
+    os.chdir(multi_project)
+    try:
+        result = runner.invoke(app, ["logs"])
+    finally:
+        os.chdir(old_cwd)
+    assert result.exit_code != 0
+    assert "--stack" in result.output
+
+
+def test_up_unknown_stack_errors(multi_project):
+    old_cwd = os.getcwd()
+    os.chdir(multi_project)
+    try:
+        result = runner.invoke(app, ["up", "nope"])
+    finally:
+        os.chdir(old_cwd)
+    assert result.exit_code != 0
+    assert "not found" in result.output
 
 
 # ── p4n4 validate ─────────────────────────────────────────────────────────────
