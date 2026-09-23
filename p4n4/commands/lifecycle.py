@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Annotated
 
 import typer
@@ -12,6 +14,15 @@ from rich.table import Table
 from p4n4.project import require_compose_dirs
 
 console = Console()
+
+
+@contextmanager
+def _compose_errors() -> Iterator[None]:
+    try:
+        yield
+    except compose.ComposeNotFoundError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
 
 
 def up(
@@ -27,7 +38,8 @@ def up(
     """Start one or all enabled stacks in dependency order."""
     for name, cwd in require_compose_dirs(stack):
         console.print(f"[cyan]Starting [bold]{name}[/bold] stack in[/cyan] [bold]{cwd}[/bold] ...")
-        rc = compose.up(cwd, build=build, pull=pull, detach=not no_detach)
+        with _compose_errors():
+            rc = compose.up(cwd, build=build, pull=pull, detach=not no_detach)
         if rc != 0:
             raise typer.Exit(rc)
 
@@ -50,7 +62,8 @@ def down(
     # Reverse dependency order: dependents stop before the stacks they rely on
     for name, cwd in reversed(dirs):
         console.print(f"[cyan]Stopping [bold]{name}[/bold] stack in[/cyan] [bold]{cwd}[/bold] ...")
-        rc = compose.down(cwd, volumes=volumes)
+        with _compose_errors():
+            rc = compose.down(cwd, volumes=volumes)
         if rc != 0:
             raise typer.Exit(rc)
 
@@ -58,7 +71,8 @@ def down(
 def status() -> None:
     """Print a service status table."""
     for name, cwd in require_compose_dirs():
-        services = compose.ps(cwd)
+        with _compose_errors():
+            services = compose.ps(cwd)
 
         if not services:
             console.print(
@@ -127,6 +141,7 @@ def logs(
         )
         raise typer.Exit(1)
     for _name, cwd in dirs:
-        rc = compose.logs(cwd, service=service, tail=tail, follow=not no_follow)
+        with _compose_errors():
+            rc = compose.logs(cwd, service=service, tail=tail, follow=not no_follow)
         if rc != 0:
             raise typer.Exit(rc)
