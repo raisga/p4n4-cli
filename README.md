@@ -176,11 +176,12 @@ p4n4 up
 p4n4 up --ai
 ```
 
-**No internet access?** Point `--source-iot` / `--source-ai` at local checkouts:
+**No internet access?** Point `--source-iot` / `--source-ai` / `--source-edge` at local checkouts:
 
 ```bash
 p4n4 init my-project --source-iot ../p4n4-iot
 p4n4 init my-ai-project --layer ai --source-ai ../p4n4-ai
+p4n4 init my-edge-project --layer edge --source-edge ../p4n4-edge
 ```
 
 Once the IoT stack is up:
@@ -219,7 +220,7 @@ my-project/
 │   │   └── acl.example              # ACL template
 │   ├── node-red/
 │   │   ├── settings.js              # Node-RED runtime settings
-│   │   └── flows.json               # MQTT → InfluxDB pipeline
+│   │   └── flows/flows.json         # MQTT → InfluxDB pipeline
 │   └── grafana/
 │       └── provisioning/
 │           ├── datasources/
@@ -300,6 +301,7 @@ p4n4 init <project-name> [options]
 | `--no-interactive` | Skip the wizard and use generated defaults | — |
 | `--source-iot <path>` | Local p4n4-iot checkout (skips git clone; useful offline) | — |
 | `--source-ai <path>` | Local p4n4-ai checkout (skips git clone; useful offline) | — |
+| `--source-edge <path>` | Local p4n4-edge checkout (skips git clone; useful offline) | — |
 
 The interactive wizard prompts for InfluxDB org, timezone, and admin passwords. When the `ai` layer is active it also prompts for Letta, n8n, and n8n encryption key values. All secrets default to randomly generated values if left blank.
 
@@ -412,7 +414,7 @@ p4n4 logs influxdb --tail 50 --no-follow
 
 Rotate secrets in `.env` with new randomly generated values. Prompts for confirmation before writing. Rotates whichever of the following keys are present:
 
-- **IoT layer:** `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN`, `GRAFANA_PASSWORD`
+- **IoT layer:** `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN`, `GRAFANA_PASSWORD`, `NODE_RED_PASSWORD`
 - **AI layer:** `LETTA_SERVER_PASSWORD`, `N8N_BASIC_AUTH_PASSWORD`, `N8N_ENCRYPTION_KEY`
 
 ```bash
@@ -555,6 +557,10 @@ INFLUXDB_SANDBOX_RETENTION=30d
 # Grafana
 GRAFANA_USER=admin
 GRAFANA_PASSWORD=<generated>
+
+# Node-RED editor login
+NODE_RED_USER=admin
+NODE_RED_PASSWORD=<generated>
 ```
 
 **AI layer:**
@@ -595,7 +601,7 @@ INFLUXDB_BUCKET=raw_telemetry
 
 ## Source Repos
 
-Stack files are fetched from these repos at `p4n4 init` time. URLs are defined in `p4n4_lib/sources.yaml` (shipped with [`p4n4-lib`](https://github.com/raisga/p4n4-lib)) and can be overridden per-layer via `--source-iot` / `--source-ai`, or by editing the file to point at a fork or mirror.
+Stack files are fetched from these repos at `p4n4 init` time. URLs are defined in `p4n4_lib/sources.yaml` (shipped with [`p4n4-lib`](https://github.com/raisga/p4n4-lib)) and can be overridden per-layer via `--source-iot` / `--source-ai` / `--source-edge`, or by editing the file to point at a fork or mirror.
 
 | Layer     | Repo |
 |-----------|------|

@@ -66,6 +66,13 @@ def cmd(
             help="Local path to a p4n4-ai checkout (skips git clone; useful offline).",
         ),
     ] = None,
+    edge_source: Annotated[
+        str | None,
+        typer.Option(
+            "--source-edge",
+            help="Local path to a p4n4-edge checkout (skips git clone; useful offline).",
+        ),
+    ] = None,
 ) -> None:
     """Scaffold a new P4N4 project."""
     project_dir = Path.cwd() / project_name
@@ -75,6 +82,13 @@ def cmd(
         raise typer.Exit(1)
 
     layers = ["iot", "ai", "edge"] if layer == "all" else [lyr.strip() for lyr in layer.split(",")]
+    unknown = [lyr for lyr in layers if lyr not in LAYERS]
+    if unknown or not layers:
+        console.print(
+            f"[red]Error:[/red] Unknown layer(s): [bold]{', '.join(unknown) or layer}[/bold]. "
+            f"Choose from {', '.join(LAYERS)} or all."
+        )
+        raise typer.Exit(1)
 
     console.print(
         Panel(
@@ -90,6 +104,7 @@ def cmd(
         influx_password = secretutil.token(12)
         influx_token = secretutil.token(32)
         grafana_password = secretutil.token(12)
+        node_red_password = secretutil.token(12)
         letta_password = secretutil.token(12)
         n8n_password = secretutil.token(12)
         n8n_encryption_key = secretutil.token(16)
@@ -108,6 +123,10 @@ def cmd(
         )
         grafana_password = _ask_password(
             "Grafana admin password (leave blank to auto-generate)",
+            secretutil.token(12),
+        )
+        node_red_password = _ask_password(
+            "Node-RED editor password (leave blank to auto-generate)",
             secretutil.token(12),
         )
         if "ai" in layers:
@@ -145,6 +164,8 @@ def cmd(
         "INFLUXDB_SANDBOX_RETENTION": "30d",
         "GRAFANA_USER": "admin",
         "GRAFANA_PASSWORD": grafana_password,
+        "NODE_RED_USER": "admin",
+        "NODE_RED_PASSWORD": node_red_password,
     }
 
     ai_env_values: dict[str, str] = {
@@ -159,6 +180,14 @@ def cmd(
         "INFLUXDB_BUCKET": "raw_telemetry",
     }
 
+    edge_env_values: dict[str, str] = {
+        "TZ": tz,
+        # Shared InfluxDB values (must match p4n4-iot when used alongside it)
+        "INFLUXDB_TOKEN": influx_token,
+        "INFLUXDB_ORG": org,
+        "INFLUXDB_BUCKET_AI_EVENTS": "ai_events",
+    }
+
     # ── Create project directory and scaffold ─────────────────────────────────
     project_dir.mkdir(parents=True)
 
@@ -168,6 +197,9 @@ def cmd(
 
         if "ai" in layers:
             _scaffold(project_dir, layers, "ai", ai_env_values, ai_source)
+
+        if "edge" in layers:
+            _scaffold(project_dir, layers, "edge", edge_env_values, edge_source)
 
         mf.save(project_dir / mf.MANIFEST_FILE, mf.create(project_name, layers))
 

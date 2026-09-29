@@ -16,9 +16,23 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`<project>/iot/`, `<project>/ai/`) with its own compose file, config, and `.env`,
   matching how the stacks are designed to run (separate Compose projects sharing the
   `p4n4-net` network). Single-layer projects keep the flat layout.
+- `p4n4 init --layer all` and `--layer edge` now scaffold the edge stack (compose file,
+  runner, model directories and `.env`, sharing the InfluxDB token, org and timezone with
+  the other layers). Previously edge was recorded in `.p4n4.json` without any files, and
+  `p4n4 validate` passed because the edge layer defined nothing to check.
+- `p4n4 init` rejects unknown layer names instead of recording them in `.p4n4.json`.
+
+### Security
+
+- The Node-RED editor and Admin API now require a login. `p4n4 init` generates
+  `NODE_RED_PASSWORD` (or prompts for it after the Grafana password) and writes it with
+  `NODE_RED_USER=admin` to the IoT `.env`. `p4n4 validate` requires both keys, and
+  `p4n4 secret rotate` rotates the password. Existing projects must add both keys to their
+  IoT `.env`; until then the editor refuses every login.
 
 ### Added
 
+- `--source-edge` flag on `p4n4 init` for offline scaffolding of the edge stack
 - `p4n4 up <stack>` / `p4n4 down <stack>` now actually filter to one stack; with no
   argument they run all enabled stacks in dependency order (iot → ai → edge, reversed
   for `down`)
