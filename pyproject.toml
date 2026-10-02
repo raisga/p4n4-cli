@@ -23,7 +23,7 @@ classifiers = [
   "Topic :: Software Development :: Build Tools",
 ]
 dependencies = [
-  "p4n4-lib>=0.1.0",
+  "p4n4-lib>=0.2.0",
   "typer[all]>=0.12",
   "rich>=13",
   "questionary>=2",

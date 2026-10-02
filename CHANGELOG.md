@@ -9,6 +9,36 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `dashboard` layer: `p4n4 init --layer dashboard` (or `iot,dashboard`) scaffolds the
+  p4n4-dashboard web service: its `docker-compose.yml` (the released image on port 8088,
+  proxying p4n4-api, Ollama and Letta) and a `.env` from the repo's `.env.example`.
+  `--source-dashboard` scaffolds from a local checkout. `p4n4 up` starts it after the
+  other stacks and prints its URL, and `p4n4 down` stops it first.
+  With the dashboard enabled, the IoT `.env` gets `GRAFANA_ALLOW_EMBEDDING=true` so its
+  web UI can frame Grafana (`false` otherwise).
+- External MQTT broker: `p4n4 init` (wizard, or `--mqtt-remote HOST[:PORT]` with
+  `--mqtt-remote-user`, `--mqtt-remote-password` / `P4N4_MQTT_REMOTE_PASSWORD`,
+  `--mqtt-remote-topics`, `--mqtt-remote-tls`, `--mqtt-remote-ca`) configures the IoT
+  stack's Mosquitto bridge, which pulls topics from another broker into the local one.
+  `p4n4 secret show` lists `MQTT_REMOTE_PASSWORD` fully masked; `rotate` leaves it alone.
+- `p4n4 validate` checks the `.p4n4.json` `dashboard` block (`grafana_path`, `tabs`,
+  `theme`) and that a named theme directory has a `brand.json`.
+
+### Changed
+
+- `p4n4 init --layer all` enables every registered layer, which now includes `dashboard`.
+- Projects created from a template (`.p4n4.json` has a `template` block) are validated
+  against the template's own `.env.example` instead of the base stack's file list, so a
+  `mqtt-influx-grafana` project no longer fails on missing Node-RED files.
+- Requires `p4n4-lib>=0.2.0`.
+
+### Fixed
+
+- `.env` values containing `$`, `#`, spaces or quotes are quoted so Docker Compose reads
+  them literally (via `p4n4-lib`); before, a `$` was interpolated and ` #` cut the value.
+
 ### Fixed
 
 - `p4n4 init --layer iot,ai` (and `--layer all`) no longer crashes on file collisions:

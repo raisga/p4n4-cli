@@ -279,9 +279,22 @@ my-project/
     └── scripts/ …
 ```
 
-`p4n4 up` / `down` operate on all stacks in dependency order (iot → ai → edge;
-reversed for `down`), or on one stack via `p4n4 up ai`. `p4n4 logs` needs
+`p4n4 up` / `down` operate on all stacks in dependency order (iot → ai → edge →
+dashboard; reversed for `down`), or on one stack via `p4n4 up ai`. `p4n4 logs` needs
 `--stack <name>` (or `--no-follow`) in multi-layer projects.
+
+**Dashboard layer (`--layer dashboard`, included in `all`):**
+
+```
+my-project/dashboard/
+├── .env                  # DASHBOARD_VERSION, DASHBOARD_PORT (8088), proxy upstreams
+└── docker-compose.yml    # p4n4-dashboard: the web UI, proxying p4n4-api, Ollama and Letta
+```
+
+Only the compose file is copied: the service runs the released
+`ghcr.io/raisga/p4n4-dashboard` image, and `p4n4 up` prints its URL. See the
+[p4n4-dashboard README](https://github.com/raisga/p4n4-dashboard#run-as-a-service-web) for
+reaching p4n4-api and Grafana from it.
 
 ---
 
@@ -297,13 +310,28 @@ p4n4 init <project-name> [options]
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--layer <name>` | Layers to enable: `iot`, `ai`, `edge`, `all`, or comma-separated | `iot` |
+| `--layer <name>` | Layers to enable: `iot`, `ai`, `edge`, `dashboard`, `all`, or comma-separated | `iot` |
 | `--no-interactive` | Skip the wizard and use generated defaults | — |
 | `--source-iot <path>` | Local p4n4-iot checkout (skips git clone; useful offline) | — |
 | `--source-ai <path>` | Local p4n4-ai checkout (skips git clone; useful offline) | — |
 | `--source-edge <path>` | Local p4n4-edge checkout (skips git clone; useful offline) | — |
+| `--source-dashboard <path>` | Local p4n4-dashboard checkout (skips git clone; useful offline) | — |
+| `--mqtt-remote <host[:port]>` | Bridge topics in from an external MQTT broker (needs the `iot` layer) | — |
+| `--mqtt-remote-user <name>` | Username on the external broker | — |
+| `--mqtt-remote-password <pw>` | Password on the external broker; prefer `P4N4_MQTT_REMOTE_PASSWORD` | — |
+| `--mqtt-remote-topics <list>` | Comma-separated topic filters to pull in | `sensors/#` |
+| `--mqtt-remote-tls` | Connect to the external broker over TLS (port 8883 by default) | off |
+| `--mqtt-remote-ca <file>` | CA certificate for that TLS connection, copied into the project | system CAs |
 
 The interactive wizard prompts for InfluxDB org, timezone, and admin passwords. When the `ai` layer is active it also prompts for Letta, n8n, and n8n encryption key values. All secrets default to randomly generated values if left blank.
+
+With the `iot` layer, the wizard also offers to pull topics from an external MQTT broker, the way `mosquitto_sub -h <host> -u <user> -P <password> -t <topic>` would. It asks for the host, credentials, topics, an optional local prefix (e.g. `remote/`) and TLS settings. The local broker then subscribes to those topics on the external one and republishes them locally, where Node-RED and the edge runner pick them up as usual. Nothing is published back. The settings land in the IoT `.env` as `MQTT_REMOTE_*` (see the [p4n4-iot README](https://github.com/raisga/p4n4-iot#external-mqtt-broker)).
+
+```bash
+# Non-interactive: pull sensors/# from a broker that requires a login
+P4N4_MQTT_REMOTE_PASSWORD='s3cret' p4n4 init plant-a --no-interactive \
+  --mqtt-remote broker.example.com --mqtt-remote-user plant-a --mqtt-remote-tls
+```
 
 ```bash
 # IoT stack, interactive wizard (default)
@@ -422,6 +450,8 @@ p4n4 secret
 ```
 
 Run `p4n4 down && p4n4 up` after rotating secrets to apply them.
+
+`p4n4 secret show` also lists `MQTT_REMOTE_PASSWORD` when an external broker is configured, fully masked. Rotation never touches it: the external broker issued it, so a new value would stop the bridge from logging in.
 
 ---
 

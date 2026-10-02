@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Annotated
 
 import typer
 from p4n4_lib import compose
+from p4n4_lib import env as envutil
 from rich.console import Console
 from rich.table import Table
 
@@ -25,8 +27,19 @@ def _compose_errors() -> Iterator[None]:
         raise typer.Exit(1) from exc
 
 
+def dashboard_url(cwd: Path) -> str:
+    """Where the dashboard layer in `cwd` listens, from its .env (DASHBOARD_PORT, _BIND)."""
+    env_path = cwd / envutil.ENV_FILE
+    env = envutil.load(env_path) if env_path.exists() else {}
+    bind = env.get("DASHBOARD_BIND") or "0.0.0.0"
+    host = "localhost" if bind in ("0.0.0.0", "::") else bind
+    return f"http://{host}:{env.get('DASHBOARD_PORT') or '8088'}"
+
+
 def up(
-    stack: Annotated[str | None, typer.Argument(help="Stack to start: iot, ai, edge.")] = None,
+    stack: Annotated[
+        str | None, typer.Argument(help="Stack to start: iot, ai, edge, dashboard.")
+    ] = None,
     build: Annotated[bool, typer.Option("--build", help="Rebuild images before starting.")] = False,
     pull: Annotated[
         bool, typer.Option("--pull", help="Pull latest images before starting.")
@@ -42,10 +55,14 @@ def up(
             rc = compose.up(cwd, build=build, pull=pull, detach=not no_detach)
         if rc != 0:
             raise typer.Exit(rc)
+        if name == "dashboard":
+            console.print(f"[green]Dashboard:[/green] {dashboard_url(cwd)}")
 
 
 def down(
-    stack: Annotated[str | None, typer.Argument(help="Stack to stop: iot, ai, edge.")] = None,
+    stack: Annotated[
+        str | None, typer.Argument(help="Stack to stop: iot, ai, edge, dashboard.")
+    ] = None,
     volumes: Annotated[
         bool, typer.Option("--volumes", help="Also remove persistent data volumes.")
     ] = False,

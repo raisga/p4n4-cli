@@ -31,7 +31,7 @@ def _require_env_files() -> list[tuple[str, Path]]:
 
 @app.command("show")
 def show() -> None:
-    """Show masked secrets from .env."""
+    """Show masked secrets from .env, including external ones (never rotated)."""
     files = _require_env_files()
     multi = len(files) > 1
 
@@ -43,12 +43,17 @@ def show() -> None:
 
     for name, env_path in files:
         env = envutil.load(env_path)
+        row = [name] if multi else []
         for key in secretutil.ROTATABLE_KEYS:
             if key in env:
                 val = env[key]
                 masked = val[:4] + "*" * max(0, len(val) - 4) if len(val) > 4 else "****"
-                row = [name] if multi else []
                 table.add_row(*row, key, masked)
+        # Externally issued (e.g. an MQTT broker password): a human-chosen value
+        # shows no characters, and an empty one (nothing configured) is skipped
+        for key in secretutil.EXTERNAL_KEYS:
+            if env.get(key):
+                table.add_row(*row, key, "******** [dim](external, not rotated)[/dim]")
 
     console.print(table)
 

@@ -25,6 +25,8 @@ def _stack_source(name: str) -> str:
     candidates = [
         _REPO_ROOT.parent / f"p4n4-{name}",
         _REPO_ROOT.parent.parent / "stacks" / name,
+        # The dashboard is a client, not a stack: clients/dashboard in the monorepo
+        _REPO_ROOT.parent / name,
     ]
     for candidate in candidates:
         if candidate.exists():
@@ -36,6 +38,7 @@ def _stack_source(name: str) -> str:
 _IOT_SOURCE = _stack_source("iot")
 _AI_SOURCE = _stack_source("ai")
 _EDGE_SOURCE = _stack_source("edge")
+_DASHBOARD_SOURCE = _stack_source("dashboard")
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -109,6 +112,8 @@ def all_project(tmp_path):
             _AI_SOURCE,
             "--source-edge",
             _EDGE_SOURCE,
+            "--source-dashboard",
+            _DASHBOARD_SOURCE,
         ],
     )
     assert result.exit_code == 0, result.output
@@ -193,6 +198,10 @@ def test_init_iot_env_has_required_keys(iot_project):
         assert env.get(key), f".env missing key: {key}"
 
 
+def test_init_iot_without_dashboard_keeps_grafana_unframeable(iot_project):
+    assert envutil.load(iot_project / ".env")["GRAFANA_ALLOW_EMBEDDING"] == "false"
+
+
 def test_init_iot_generates_node_red_password(iot_project):
     env = envutil.load(iot_project / ".env")
     assert env["NODE_RED_PASSWORD"] != "adminpassword"
@@ -212,6 +221,90 @@ def test_init_fails_if_directory_exists():
         )
         assert result.exit_code != 0
         assert "already exists" in result.output
+
+
+# ── p4n4 init: external MQTT broker ─────────────────────────────────────────
+
+
+def test_init_iot_bridge_disabled_by_default(iot_project):
+    env = envutil.load(iot_project / ".env")
+    assert env["MQTT_REMOTE_HOST"] == ""
+    assert (iot_project / "config/mosquitto/bridge.sh").is_file()
+
+
+def test_init_mqtt_remote_writes_bridge_env(tmp_path):
+    ca = tmp_path / "broker-ca.crt"
+    ca.write_text("-----BEGIN CERTIFICATE-----\n")
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                "proj",
+                "--no-interactive",
+                "--source-iot",
+                _IOT_SOURCE,
+                "--mqtt-remote",
+                "broker.example.com:8883",
+                "--mqtt-remote-user",
+                "alice",
+                "--mqtt-remote-topics",
+                "sensors/#,factory/+/celsius",
+                "--mqtt-remote-tls",
+                "--mqtt-remote-ca",
+                str(ca),
+            ],
+            # The password comes from the environment, as recommended
+            env={"P4N4_MQTT_REMOTE_PASSWORD": "s3cr$t pa#ss"},
+        )
+        assert result.exit_code == 0, result.output
+        env = envutil.load(Path("proj/.env"))
+        assert env["MQTT_REMOTE_HOST"] == "broker.example.com"
+        assert env["MQTT_REMOTE_PORT"] == "8883"
+        assert env["MQTT_REMOTE_USER"] == "alice"
+        assert env["MQTT_REMOTE_PASSWORD"] == "s3cr$t pa#ss"
+        assert env["MQTT_REMOTE_TOPICS"] == "sensors/#,factory/+/celsius"
+        assert env["MQTT_REMOTE_TLS"] == "true"
+        assert env["MQTT_REMOTE_CA_FILE"] == "broker-ca.crt"
+        assert Path("proj/config/mosquitto/certs/broker-ca.crt").is_file()
+        # Quoted so Compose doesn't interpolate $t or cut at the #
+        assert "MQTT_REMOTE_PASSWORD='s3cr$t pa#ss'" in Path("proj/.env").read_text()
+
+
+def test_init_mqtt_remote_requires_iot_layer(tmp_path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(
+            app,
+            ["init", "proj", "--layer", "ai", "--no-interactive", "--mqtt-remote", "broker"],
+        )
+        assert result.exit_code != 0
+        assert "--mqtt-remote" in result.output
+        assert not Path("proj").exists()
+
+
+def test_init_mqtt_remote_rejects_bad_port(tmp_path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(
+            app,
+            ["init", "proj", "--no-interactive", "--source-iot", _IOT_SOURCE]
+            + ["--mqtt-remote", "broker:notaport"],
+        )
+        assert result.exit_code != 0
+        assert not Path("proj").exists()
+
+
+def test_secret_external_password_is_masked_and_never_rotated(iot_project):
+    env_path = iot_project / ".env"
+    envutil.write(env_path, {**envutil.load(env_path), "MQTT_REMOTE_PASSWORD": "hunter22"})
+
+    shown = _run_in(iot_project, ["secret", "show"])
+    assert shown.exit_code == 0, shown.output
+    assert "MQTT_REMOTE_PASSWORD" in shown.output
+    assert "hunt" not in shown.output
+
+    rotated = _run_in(iot_project, ["secret", "rotate"], input="y\n")
+    assert rotated.exit_code == 0, rotated.output
+    assert envutil.load(env_path)["MQTT_REMOTE_PASSWORD"] == "hunter22"
 
 
 # ── p4n4 init: AI ────────────────────────────────────────────────────────────
@@ -492,7 +585,7 @@ def test_init_all_scaffolds_edge(all_project):
 
 def test_init_all_manifest_lists_every_layer(all_project):
     data = json.loads((all_project / ".p4n4.json").read_text())
-    assert data["layers"] == ["iot", "ai", "edge"]
+    assert data["layers"] == ["iot", "ai", "edge", "dashboard"]
 
 
 def test_init_all_edge_shares_influxdb_values(all_project):
@@ -541,3 +634,106 @@ def test_init_unknown_layer_errors(tmp_path):
     assert result.exit_code != 0
     assert "nope" in result.output
     assert not (tmp_path / "proj-bad").exists()
+
+
+# ── p4n4 init: dashboard ──────────────────────────────────────────────────────
+
+
+def test_init_all_includes_the_dashboard(all_project):
+    data = json.loads((all_project / ".p4n4.json").read_text())
+    assert data["layers"][-1] == "dashboard"
+    assert (all_project / "dashboard" / "docker-compose.yml").exists()
+    env = envutil.load(all_project / "dashboard" / ".env")
+    assert env["DASHBOARD_PORT"] == "8088"
+    assert env["DASHBOARD_VERSION"]
+    # Only the compose file is copied, not the Flutter sources
+    assert sorted(p.name for p in (all_project / "dashboard").iterdir()) == [
+        ".env",
+        "docker-compose.yml",
+    ]
+
+
+def test_init_dashboard_with_iot(tmp_path):
+    old_cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                "proj-ui",
+                "--layer",
+                "iot,dashboard",
+                "--no-interactive",
+                "--source-iot",
+                _IOT_SOURCE,
+                "--source-dashboard",
+                _DASHBOARD_SOURCE,
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        validate = _run_in(tmp_path / "proj-ui", ["validate"])
+        assert validate.exit_code == 0, validate.output
+        iot_env = envutil.load(tmp_path / "proj-ui" / "iot" / ".env")
+        assert iot_env["GRAFANA_ALLOW_EMBEDDING"] == "true"
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_dashboard_url_reads_the_layer_env(tmp_path):
+    from p4n4.commands.lifecycle import dashboard_url
+
+    assert dashboard_url(tmp_path) == "http://localhost:8088"
+    envutil.write(tmp_path / ".env", {"DASHBOARD_PORT": "9000", "DASHBOARD_BIND": "192.168.1.20"})
+    assert dashboard_url(tmp_path) == "http://192.168.1.20:9000"
+
+
+def test_init_wizard_asks_for_external_broker(tmp_path, monkeypatch):
+    from p4n4.commands import init as init_cmd
+
+    ca = tmp_path / "ca.pem"
+    ca.write_text("-----BEGIN CERTIFICATE-----\n")
+    # Answers in prompt order; the empty ones accept defaults/auto-generate
+    answers = iter(
+        [
+            "",  # InfluxDB organisation
+            "",  # Timezone
+            "",  # InfluxDB password
+            "",  # InfluxDB token
+            "",  # Grafana password
+            "",  # Node-RED password
+            True,  # Pull topics from an external broker?
+            "mqtt.example.org",
+            "bob",
+            "pa'ss$",
+            "",  # topics: default
+            "remote/",
+            True,  # TLS
+            str(ca),
+        ]
+    )
+
+    class _Prompt:
+        def __init__(self, *_args, **_kwargs):
+            self.answer = next(answers)
+
+        def ask(self):
+            return self.answer
+
+    for name in ("text", "password", "confirm"):
+        monkeypatch.setattr(init_cmd.questionary, name, _Prompt)
+
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(app, ["init", "proj", "--source-iot", _IOT_SOURCE])
+        assert result.exit_code == 0, result.output
+        env = envutil.load(Path("proj/.env"))
+        assert env["MQTT_REMOTE_HOST"] == "mqtt.example.org"
+        assert env["MQTT_REMOTE_PORT"] == ""
+        assert env["MQTT_REMOTE_USER"] == "bob"
+        assert env["MQTT_REMOTE_PASSWORD"] == "pa'ss$"
+        assert env["MQTT_REMOTE_TOPICS"] == "sensors/#"
+        assert env["MQTT_REMOTE_PREFIX"] == "remote/"
+        assert env["MQTT_REMOTE_TLS"] == "true"
+        assert env["MQTT_REMOTE_CA_FILE"] == "ca.pem"
+        assert Path("proj/config/mosquitto/certs/ca.pem").is_file()
+    assert next(answers, None) is None, "wizard asked fewer questions than expected"
