@@ -9,6 +9,23 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-03
+
+### Upgrading from 0.1.x
+
+- Multi-layer projects now keep each layer in its own subdirectory (`iot/`, `ai/`, …).
+  Projects created by 0.1.x with more than one layer use the old flat layout: create a
+  new project with `p4n4 init` and copy your data and `.env` values across.
+- The IoT `.env` needs `NODE_RED_USER` and `NODE_RED_PASSWORD` (see Security below).
+- New projects set `COMPOSE_PROJECT_NAME` in each layer's `.env` (see Fixed below). Existing
+  projects keep their old names: **don't add it to an existing project** unless you also move its
+  volumes, because Compose would start on new, empty ones.
+- The stacks now put every service in a Compose profile, and `COMPOSE_PROFILES` in each
+  layer's `.env` picks the ones that start. New projects get each stack's default: the MING
+  services, Ollama only for the AI layer, and the inference runner for edge.
+- p4n4 0.2.x is meant for trusted networks only. Don't expose its service ports to the
+  internet or to networks you don't control.
+
 ### Added
 
 - `dashboard` layer: `p4n4 init --layer dashboard` (or `iot,dashboard`) scaffolds the
@@ -23,21 +40,43 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--mqtt-remote-topics`, `--mqtt-remote-tls`, `--mqtt-remote-ca`) configures the IoT
   stack's Mosquitto bridge, which pulls topics from another broker into the local one.
   `p4n4 secret show` lists `MQTT_REMOTE_PASSWORD` fully masked; `rotate` leaves it alone.
+- `--source-edge` flag on `p4n4 init` for offline scaffolding of the edge stack
+- `p4n4 up <stack>` / `p4n4 down <stack>` now actually filter to one stack; with no
+  argument they run all enabled stacks in dependency order (iot → ai → edge, reversed
+  for `down`)
+- `p4n4 logs --stack <name>` to pick a stack in multi-layer projects (required when
+  following logs; `--no-follow` dumps all stacks)
+- `p4n4 status` prints one table per stack in multi-layer projects
+- `p4n4 secret show` gains a Stack column in multi-layer projects; `p4n4 secret rotate`
+  rotates across all layer `.env` files, keeping shared keys (e.g. `INFLUXDB_TOKEN`)
+  identical in every file
+- `p4n4 validate` checks each layer's files and `.env` in its own directory, with
+  `iot/`-style prefixes in multi-layer output
 - `p4n4 validate` checks the `.p4n4.json` `dashboard` block (`grafana_path`, `tabs`,
   `theme`) and that a named theme directory has a `brand.json`.
 
 ### Changed
 
-- `p4n4 init --layer all` enables every registered layer, which now includes `dashboard`.
+- Shared, framework-agnostic code extracted into the new [`p4n4-lib`](https://github.com/raisga/p4n4-lib)
+  package, now a dependency (`p4n4-lib>=0.2.0`): manifest, dotenv, Docker Compose
+  wrappers, layer registry (repo URLs, copy paths, required files/env keys), scaffolding,
+  validation, and secret generation all live in `p4n4_lib`
+- `p4n4/utils/`, `p4n4/sources.py`, and `p4n4/sources.yaml` removed in favour of `p4n4_lib`
+- Duplicate token generators in `init`/`secret` unified as `p4n4_lib.secrets`
+- "No .p4n4.json found" error message unified across commands via `p4n4.project.require_manifest`
+- `p4n4 init --layer all` enables every registered layer, which now includes `edge` and
+  `dashboard`.
+- The AI layer starts only Ollama by default. Letta and n8n are optional: `init` still
+  generates their secrets and prints how to enable them (`COMPOSE_PROFILES=ollama,letta,n8n`
+  in the AI `.env`). The wizard's Letta and n8n prompts say they're optional.
 - Projects created from a template (`.p4n4.json` has a `template` block) are validated
   against the template's own `.env.example` instead of the base stack's file list, so a
   `mqtt-influx-grafana` project no longer fails on missing Node-RED files.
-- Requires `p4n4-lib>=0.2.0`.
-
-### Fixed
-
-- `.env` values containing `$`, `#`, spaces or quotes are quoted so Docker Compose reads
-  them literally (via `p4n4-lib`); before, a `$` was interpolated and ` #` cut the value.
+- `p4n4 down` stops every service in the stack, including ones outside `COMPOSE_PROFILES`
+  (via `p4n4-lib`).
+- Typer is pinned to a tested range (`>=0.12,<0.28`).
+- Tests locate local stack checkouts via sibling repos (CI) or `stacks/<name>` (monorepo),
+  and no longer use `CliRunner.isolated_filesystem`, which Typer 0.27 removed.
 
 ### Fixed
 
@@ -51,6 +90,17 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the other layers). Previously edge was recorded in `.p4n4.json` without any files, and
   `p4n4 validate` passed because the edge layer defined nothing to check.
 - `p4n4 init` rejects unknown layer names instead of recording them in `.p4n4.json`.
+- Two multi-layer projects on one host no longer share volumes. Compose named each layer after
+  its directory (`iot`, `ai`, …), so a second project silently reused the first one's data, and
+  InfluxDB skipped its first-run setup. `init` now writes `COMPOSE_PROJECT_NAME`: `<project>` for
+  single-layer projects, `<project>-<layer>` for multi-layer ones.
+- Lifecycle commands show a clean error instead of a traceback when Docker Compose is
+  missing; the standalone `docker-compose` (v1) is used when the v2 plugin is absent.
+- `.env` values containing `$`, `#`, spaces or quotes are quoted so Docker Compose reads
+  them literally (via `p4n4-lib`); before, a `$` was interpolated and ` #` cut the value.
+- Windows: scaffolded shell scripts keep LF line endings (stacks are cloned with
+  `core.autocrlf=false`), `.env` and `.p4n4.json` are written as UTF-8 with LF endings,
+  and commands no longer fail with `UnicodeEncodeError` when their output is redirected.
 
 ### Security
 
@@ -60,31 +110,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `p4n4 secret rotate` rotates the password. Existing projects must add both keys to their
   IoT `.env`; until then the editor refuses every login.
 
-### Added
-
-- `--source-edge` flag on `p4n4 init` for offline scaffolding of the edge stack
-- `p4n4 up <stack>` / `p4n4 down <stack>` now actually filter to one stack; with no
-  argument they run all enabled stacks in dependency order (iot → ai → edge, reversed
-  for `down`)
-- `p4n4 logs --stack <name>` to pick a stack in multi-layer projects (required when
-  following logs; `--no-follow` dumps all stacks)
-- `p4n4 status` prints one table per stack in multi-layer projects
-- `p4n4 secret show` gains a Stack column in multi-layer projects; `p4n4 secret rotate`
-  rotates across all layer `.env` files, keeping shared keys (e.g. `INFLUXDB_TOKEN`)
-  identical in every file
-- `p4n4 validate` checks each layer's files and `.env` in its own directory, with
-  `iot/`-style prefixes in multi-layer output
-
-### Changed
-
-- Shared, framework-agnostic code extracted into the new [`p4n4-lib`](https://github.com/raisga/p4n4-lib)
-  package, now a dependency: manifest, dotenv, Docker Compose wrappers, layer registry
-  (repo URLs, copy paths, required files/env keys), scaffolding, validation, and secret
-  generation all live in `p4n4_lib`
-- `p4n4/utils/`, `p4n4/sources.py`, and `p4n4/sources.yaml` removed in favour of `p4n4_lib`
-- Duplicate token generators in `init`/`secret` unified as `p4n4_lib.secrets`
-- "No .p4n4.json found" error message unified across commands via `p4n4.project.require_manifest`
-- Tests locate local stack checkouts via sibling repos (CI) or `stacks/<name>` (monorepo)
+---
 
 ## [0.1.1] - 2026-05-14
 
@@ -131,6 +157,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - CI matrix across Python 3.11, 3.12, 3.13
 - PyPI publishing workflow via Trusted Publisher
 
-[Unreleased]: https://github.com/raisga/p4n4-cli/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/raisga/p4n4-cli/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/raisga/p4n4-cli/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/raisga/p4n4-cli/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/raisga/p4n4-cli/releases/tag/v0.1.0

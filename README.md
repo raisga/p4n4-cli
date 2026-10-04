@@ -41,9 +41,11 @@ Part of the [p4n4](https://github.com/raisga/p4n4) platform — an EdgeAI + GenA
 
 ## Overview
 
-P4N4 is a unified developer platform for IoT and Edge AI. It combines the **MING stack** (Mosquitto, InfluxDB, Node-RED, Grafana), **Edge Impulse** on-device ML inference, and a **Gen AI layer** (n8n, Letta, Ollama) into a single composable system.
+P4N4 is a unified developer platform for IoT and Edge AI. It combines the **MING stack** (Mosquitto, InfluxDB, Node-RED, Grafana), **Edge Impulse** on-device ML inference, and a **Gen AI layer** (Ollama, plus optional Letta and n8n) into a single composable system.
 
 `p4n4-cli` manages the full lifecycle — init, run, inspect, and tear down — from your terminal. Stack files are always fetched from the canonical source repos at init time, so projects are never pinned to a snapshot bundled inside the CLI.
+
+> **Trusted networks only.** p4n4 0.2.x is meant for development and trusted local networks. Don't expose its service ports to the internet or to networks you don't control. See [SECURITY.md](https://github.com/raisga/p4n4/blob/main/SECURITY.md).
 
 ---
 
@@ -55,8 +57,9 @@ P4N4 is a unified developer platform for IoT and Edge AI. It combines the **MING
 | [p4n4-iot](https://github.com/raisga/p4n4-iot) | IoT stack: Mosquitto · InfluxDB · Node-RED · Grafana |
 | [p4n4-ai](https://github.com/raisga/p4n4-ai) | GenAI stack: Ollama · Letta · n8n |
 | [p4n4-edge](https://github.com/raisga/p4n4-edge) | Edge Impulse inference stack |
-| [p4n4-api](https://github.com/raisga/p4n4-api) | Rust REST API gateway (port 8000) |
-| [p4n4-lib](https://github.com/raisga/p4n4-lib) | Shared Rust library (`pip install p4n4lib` for Python bindings) |
+| [p4n4-api](https://github.com/raisga/p4n4-api) | Python (FastAPI) REST API gateway (port 8000) |
+| [p4n4-lib](https://github.com/raisga/p4n4-lib) | Shared Python library used by this CLI and p4n4-api (`pip install p4n4-lib`) |
+| [p4n4-dashboard](https://github.com/raisga/p4n4-dashboard) | Dashboard: web service (port 8088) + desktop/mobile apps |
 | **[p4n4-cli](https://github.com/raisga/p4n4-cli)** | This repo — Python CLI (`pip install p4n4`) |
 | [p4n4-templates](https://github.com/raisga/p4n4-templates) | Community template registry |
 | [p4n4-docs](https://github.com/raisga/p4n4-docs) | Full technical documentation site |
@@ -553,11 +556,17 @@ P4N4 is organized into three composable layers.
 
 ### Gen AI
 
-| Service | Role |
-|---------|------|
-| **n8n** | Workflow automation bridging IoT and AI layers |
-| **Letta** | Stateful AI agent framework with long-term memory |
-| **Ollama** | Local LLM runtime for open-weight models |
+| Service | Role | Starts by default |
+|---------|------|-------------------|
+| **Ollama** | Local LLM runtime for open-weight models | Yes |
+| **Letta** | Stateful AI agent framework with long-term memory | No |
+| **n8n** | Workflow automation bridging IoT and AI layers | No |
+
+Every service sits in a Compose profile of its own name, and `COMPOSE_PROFILES` in the
+layer's `.env` lists the ones that start. `p4n4 init` writes the stack's default
+(`COMPOSE_PROFILES=ollama`) and still generates Letta's and n8n's secrets. To run them, set
+`COMPOSE_PROFILES=ollama,letta,n8n` in `ai/.env` (`.env` in a single-layer project) and run
+`p4n4 up ai`.
 
 All three stacks communicate over a shared `p4n4-net` Docker bridge network owned by `p4n4-iot`. The CLI handles network creation and stack ordering automatically.
 

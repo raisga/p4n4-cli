@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -15,6 +19,21 @@ from p4n4 import __version__
 from p4n4.cli import app
 
 runner = CliRunner()
+
+
+@contextmanager
+def _isolated_filesystem(temp_dir: Path | None = None) -> Iterator[Path]:
+    """Run inside a fresh temp directory. Stands in for CliRunner.isolated_filesystem,
+    which Typer 0.27's CliRunner no longer has."""
+    cwd = os.getcwd()
+    path = Path(tempfile.mkdtemp(dir=temp_dir))
+    os.chdir(path)
+    try:
+        yield path
+    finally:
+        os.chdir(cwd)
+        shutil.rmtree(path, ignore_errors=True)
+
 
 _REPO_ROOT = Path(__file__).parent.parent
 
@@ -149,7 +168,7 @@ def test_help():
 
 
 def test_init_iot_exits_cleanly():
-    with runner.isolated_filesystem():
+    with _isolated_filesystem():
         result = runner.invoke(
             app,
             ["init", "proj", "--no-interactive", "--source-iot", _IOT_SOURCE],
@@ -214,7 +233,7 @@ def test_init_iot_scripts_are_executable(iot_project):
 
 
 def test_init_fails_if_directory_exists():
-    with runner.isolated_filesystem():
+    with _isolated_filesystem():
         runner.invoke(app, ["init", "proj", "--no-interactive", "--source-iot", _IOT_SOURCE])
         result = runner.invoke(
             app, ["init", "proj", "--no-interactive", "--source-iot", _IOT_SOURCE]
@@ -235,7 +254,7 @@ def test_init_iot_bridge_disabled_by_default(iot_project):
 def test_init_mqtt_remote_writes_bridge_env(tmp_path):
     ca = tmp_path / "broker-ca.crt"
     ca.write_text("-----BEGIN CERTIFICATE-----\n")
-    with runner.isolated_filesystem(temp_dir=tmp_path):
+    with _isolated_filesystem(temp_dir=tmp_path):
         result = runner.invoke(
             app,
             [
@@ -272,7 +291,7 @@ def test_init_mqtt_remote_writes_bridge_env(tmp_path):
 
 
 def test_init_mqtt_remote_requires_iot_layer(tmp_path):
-    with runner.isolated_filesystem(temp_dir=tmp_path):
+    with _isolated_filesystem(temp_dir=tmp_path):
         result = runner.invoke(
             app,
             ["init", "proj", "--layer", "ai", "--no-interactive", "--mqtt-remote", "broker"],
@@ -283,7 +302,7 @@ def test_init_mqtt_remote_requires_iot_layer(tmp_path):
 
 
 def test_init_mqtt_remote_rejects_bad_port(tmp_path):
-    with runner.isolated_filesystem(temp_dir=tmp_path):
+    with _isolated_filesystem(temp_dir=tmp_path):
         result = runner.invoke(
             app,
             ["init", "proj", "--no-interactive", "--source-iot", _IOT_SOURCE]
@@ -311,7 +330,7 @@ def test_secret_external_password_is_masked_and_never_rotated(iot_project):
 
 
 def test_init_ai_exits_cleanly():
-    with runner.isolated_filesystem():
+    with _isolated_filesystem():
         result = runner.invoke(
             app,
             ["init", "proj-ai", "--layer", "ai", "--no-interactive", "--source-ai", _AI_SOURCE],
@@ -319,6 +338,41 @@ def test_init_ai_exits_cleanly():
         )
         assert result.exit_code == 0, result.output
         assert "proj-ai" in result.output
+
+
+def test_init_ai_starts_only_ollama_by_default():
+    with _isolated_filesystem():
+        result = runner.invoke(
+            app,
+            ["init", "proj", "--layer", "iot,ai", "--no-interactive"]
+            + ["--source-iot", _IOT_SOURCE, "--source-ai", _AI_SOURCE],
+        )
+        assert result.exit_code == 0, result.output
+        assert envutil.load(Path("proj/ai/.env"))["COMPOSE_PROFILES"] == "ollama"
+        # Letta and n8n secrets are still generated, so enabling them later just works
+        env = envutil.load(Path("proj/ai/.env"))
+        assert env["N8N_ENCRYPTION_KEY"] != "change-me-32-char-encryption-key"
+        assert env["LETTA_SERVER_PASSWORD"] != "lettapassword"
+        assert "ai/.env" in result.output
+        assert "COMPOSE_PROFILES=ollama,letta,n8n" in result.output
+
+
+def test_init_names_compose_projects_per_layer():
+    """Each layer gets its own Compose project name, so two projects' volumes never mix."""
+    with _isolated_filesystem():
+        result = runner.invoke(
+            app,
+            ["init", "Green.House", "--layer", "iot,ai", "--no-interactive"]
+            + ["--source-iot", _IOT_SOURCE, "--source-ai", _AI_SOURCE],
+        )
+        assert result.exit_code == 0, result.output
+        for layer in ("iot", "ai"):
+            env = envutil.load(Path(f"Green.House/{layer}/.env"))
+            assert env["COMPOSE_PROJECT_NAME"] == f"green-house-{layer}"
+
+
+def test_init_single_layer_compose_project_is_the_project(iot_project):
+    assert envutil.load(iot_project / ".env")["COMPOSE_PROJECT_NAME"] == iot_project.name
 
 
 def test_init_ai_creates_expected_files(ai_project):
@@ -443,7 +497,7 @@ def test_up_unknown_stack_errors(multi_project):
 
 
 def test_validate_requires_manifest():
-    with runner.isolated_filesystem():
+    with _isolated_filesystem():
         result = runner.invoke(app, ["validate"])
         assert result.exit_code != 0
         assert ".p4n4.json" in result.output
@@ -502,7 +556,7 @@ def test_validate_fails_on_missing_env_key(iot_project):
 
 
 def test_secret_requires_manifest():
-    with runner.isolated_filesystem():
+    with _isolated_filesystem():
         result = runner.invoke(app, ["secret", "rotate"])
         assert result.exit_code != 0
         assert ".p4n4.json" in result.output
@@ -540,28 +594,28 @@ def test_secret_rotates_ai_secrets(ai_project):
 
 
 def test_up_requires_manifest():
-    with runner.isolated_filesystem():
+    with _isolated_filesystem():
         result = runner.invoke(app, ["up"])
         assert result.exit_code != 0
         assert ".p4n4.json" in result.output
 
 
 def test_down_requires_manifest():
-    with runner.isolated_filesystem():
+    with _isolated_filesystem():
         result = runner.invoke(app, ["down"])
         assert result.exit_code != 0
         assert ".p4n4.json" in result.output
 
 
 def test_status_requires_manifest():
-    with runner.isolated_filesystem():
+    with _isolated_filesystem():
         result = runner.invoke(app, ["status"])
         assert result.exit_code != 0
         assert ".p4n4.json" in result.output
 
 
 def test_logs_requires_manifest():
-    with runner.isolated_filesystem():
+    with _isolated_filesystem():
         result = runner.invoke(app, ["logs"])
         assert result.exit_code != 0
         assert ".p4n4.json" in result.output
@@ -723,7 +777,7 @@ def test_init_wizard_asks_for_external_broker(tmp_path, monkeypatch):
     for name in ("text", "password", "confirm"):
         monkeypatch.setattr(init_cmd.questionary, name, _Prompt)
 
-    with runner.isolated_filesystem(temp_dir=tmp_path):
+    with _isolated_filesystem(temp_dir=tmp_path):
         result = runner.invoke(app, ["init", "proj", "--source-iot", _IOT_SOURCE])
         assert result.exit_code == 0, result.output
         env = envutil.load(Path("proj/.env"))

@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import sys
+
 import typer
 from rich.console import Console
 
 from p4n4 import __version__
 from p4n4.commands import add, ei, init, lifecycle, remove, secret, template, upgrade, validate
+
+# Windows encodes redirected output as cp1252, which can't print ✓/✗; the
+# resulting UnicodeEncodeError fails commands that already succeeded.
+if sys.platform == "win32":
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
 
 app = typer.Typer(
     name="p4n4",

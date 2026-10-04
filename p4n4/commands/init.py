@@ -110,7 +110,13 @@ def _scaffold(
     dest.mkdir(parents=True, exist_ok=True)
     if source is None:
         console.print(f"  Cloning [bold]{layer.repo_url}[/bold] …")
-    scaffold.scaffold_layer(dest, layer, env_values, source=source)
+    scaffold.scaffold_layer(
+        dest,
+        layer,
+        env_values,
+        source=source,
+        compose_project_name=layout.compose_project_name(project_dir.name, layers, layer_name),
+    )
 
 
 def cmd(
@@ -293,13 +299,16 @@ def cmd(
             console.print("\n[dim]External MQTT broker (optional):[/dim]\n")
             mqtt_remote_env, mqtt_remote_ca = _ask_mqtt_remote()
         if "ai" in layers:
-            console.print("\n[dim]GenAI stack configuration:[/dim]\n")
+            console.print(
+                "\n[dim]GenAI stack configuration (Ollama starts by default; Letta and n8n "
+                "are optional):[/dim]\n"
+            )
             letta_password = _ask_password(
-                "Letta server password (leave blank to auto-generate)",
+                "Letta server password, used if you enable letta (leave blank to auto-generate)",
                 secretutil.token(12),
             )
             n8n_password = _ask_password(
-                "n8n admin password (leave blank to auto-generate)",
+                "n8n admin password, used if you enable n8n (leave blank to auto-generate)",
                 secretutil.token(12),
             )
             n8n_encryption_key = _ask_password(
@@ -394,6 +403,14 @@ def cmd(
             f"\n  [dim]Bridging[/dim] {mqtt_remote_env['MQTT_REMOTE_TOPICS']} "
             f"[dim]from[/dim] {mqtt_remote_env['MQTT_REMOTE_HOST']} "
             "[dim](MQTT_REMOTE_* in the IoT .env)[/dim]"
+        )
+
+    if "ai" in layers:
+        ai_env = (layout.layer_dir(project_dir, layers, "ai") / ".env").relative_to(project_dir)
+        console.print(
+            "\n  [dim]GenAI: only Ollama starts by default. To run Letta or n8n, add them to[/dim] "
+            f"COMPOSE_PROFILES [dim]in {ai_env.as_posix()} (e.g.[/dim] "
+            "COMPOSE_PROFILES=ollama,letta,n8n[dim]).[/dim]"
         )
 
     console.print(f"\n[bold]Next steps:[/bold]\n  cd {project_name}\n  p4n4 up\n")
