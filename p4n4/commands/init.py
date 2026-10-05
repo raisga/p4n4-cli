@@ -18,12 +18,19 @@ from rich.panel import Panel
 console = Console()
 
 
+# unsafe_ask(): Ctrl+C raises KeyboardInterrupt, which aborts init. ask() returns
+# None instead, which "or default" would turn into the default answer.
 def _ask(prompt: str, default: str) -> str:
-    return questionary.text(prompt, default=default).ask() or default
+    return questionary.text(prompt, default=default).unsafe_ask() or default
 
 
-def _ask_password(prompt: str, default: str) -> str:
-    return questionary.password(prompt).ask() or default
+def _ask_password(prompt: str, default: str, min_length: int = 0) -> str:
+    def validate(value: str) -> bool | str:
+        if value and len(value) < min_length:
+            return f"Use at least {min_length} characters, or leave blank to auto-generate"
+        return True
+
+    return questionary.password(prompt, validate=validate).unsafe_ask() or default
 
 
 def _parse_host_port(value: str) -> tuple[str, str]:
@@ -72,17 +79,19 @@ def _ask_mqtt_remote() -> tuple[dict[str, str], Path | None]:
     if not questionary.confirm(
         "Pull topics from an external MQTT broker (like mosquitto_sub -h <host>)?",
         default=False,
-    ).ask():
+    ).unsafe_ask():
         return {}, None
-    host, port = _parse_host_port(questionary.text("Broker host (HOST or HOST:PORT)").ask() or "")
+    host, port = _parse_host_port(
+        questionary.text("Broker host (HOST or HOST:PORT)").unsafe_ask() or ""
+    )
     if not host:
         console.print("[yellow]No host given: skipping the external broker.[/yellow]")
         return {}, None
     user = _ask("Username (leave blank for none)", "")
-    password = questionary.password("Password (leave blank for none)").ask() or ""
+    password = questionary.password("Password (leave blank for none)").unsafe_ask() or ""
     topics = _ask("Topics to pull in (comma-separated)", "sensors/#")
     prefix = _ask("Local topic prefix, e.g. remote/ (leave blank for none)", "")
-    tls = bool(questionary.confirm("Connect over TLS?", default=port == "8883").ask())
+    tls = bool(questionary.confirm("Connect over TLS?", default=port == "8883").unsafe_ask())
     ca_path = None
     if tls:
         ca = _ask("CA certificate file (leave blank for the system CAs)", "")
@@ -314,6 +323,7 @@ def cmd(
             n8n_encryption_key = _ask_password(
                 "n8n encryption key (leave blank to auto-generate, must be 32+ chars)",
                 secretutil.token(16),
+                min_length=32,
             )
             n8n_host = _ask("n8n hostname (for webhooks)", "localhost")
         else:
@@ -344,6 +354,8 @@ def cmd(
     }
 
     ai_env_values: dict[str, str] = {
+        # n8n's schedules and date expressions (it defaults to America/New_York)
+        "TZ": tz,
         "LETTA_SERVER_PASSWORD": letta_password,
         "N8N_BASIC_AUTH_USER": "admin",
         "N8N_BASIC_AUTH_PASSWORD": n8n_password,

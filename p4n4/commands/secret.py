@@ -44,7 +44,7 @@ def show() -> None:
     for name, env_path in files:
         env = envutil.load(env_path)
         row = [name] if multi else []
-        for key in secretutil.ROTATABLE_KEYS:
+        for key in secretutil.SECRET_KEYS:
             if key in env:
                 val = env[key]
                 masked = val[:4] + "*" * max(0, len(val) - 4) if len(val) > 4 else "****"
@@ -60,9 +60,19 @@ def show() -> None:
 
 @app.command("rotate")
 def rotate() -> None:
-    """Re-generate all password/token values in .env."""
+    """Re-generate the secrets in .env that services pick up at their next start."""
     files = _require_env_files()
     envs = [(name, path, envutil.load(path)) for name, path in files]
+
+    # Services keep these from their first setup: a new value in .env alone
+    # would lock clients out (InfluxDB, Grafana) or stop n8n from starting
+    setup_only = [key for key in secretutil.SETUP_KEYS if any(key in env for _, _, env in envs)]
+    if setup_only:
+        console.print(
+            "[dim]Not rotated, because their services keep the value from first setup: "
+            f"{', '.join(setup_only)}. Change them in the service itself "
+            "(see SECURITY.md).[/dim]\n"
+        )
 
     # One new value per key, shared across stacks so cross-stack keys
     # (e.g. INFLUXDB_TOKEN in both iot and ai) stay in sync
@@ -106,7 +116,7 @@ def generate() -> None:
     table.add_column("Key", style="bold")
     table.add_column("Value")
 
-    for key in secretutil.ROTATABLE_KEYS:
+    for key in secretutil.SECRET_KEYS:
         table.add_row(key, secretutil.rotation_value(key))
 
     console.print(table)

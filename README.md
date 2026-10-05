@@ -388,13 +388,21 @@ p4n4 down [options]
 | Flag | Description |
 |------|-------------|
 | `--volumes` | Also remove persistent data volumes _(destructive — prompts for confirmation)_ |
+| `--all` | Stop every p4n4 project on this host, from any directory _(lists them and prompts first)_ |
 
 ```bash
 p4n4 down
 
 # Full teardown — deletes all stored data
 p4n4 down --volumes
+
+# Free the host for another project
+p4n4 down --all
 ```
+
+p4n4 stacks use fixed container names (`p4n4-influxdb`, …) and host ports, so only one
+project runs on a host at a time. `p4n4 up` checks for that before starting anything and
+names the project holding the containers; `p4n4 down --all` stops it, wherever it lives.
 
 ---
 
@@ -443,10 +451,12 @@ p4n4 logs influxdb --tail 50 --no-follow
 
 ### `p4n4 secret`
 
-Rotate secrets in `.env` with new randomly generated values. Prompts for confirmation before writing. Rotates whichever of the following keys are present:
+Rotate secrets in `.env` with new randomly generated values. Prompts for confirmation before writing. Rotates whichever of the following keys are present, which their services read at every start:
 
-- **IoT layer:** `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN`, `GRAFANA_PASSWORD`, `NODE_RED_PASSWORD`
-- **AI layer:** `LETTA_SERVER_PASSWORD`, `N8N_BASIC_AUTH_PASSWORD`, `N8N_ENCRYPTION_KEY`
+- **IoT layer:** `NODE_RED_PASSWORD`
+- **AI layer:** `LETTA_SERVER_PASSWORD`
+
+It doesn't rotate `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN`, `GRAFANA_PASSWORD` or `N8N_ENCRYPTION_KEY`, and says so. Their services keep the value from their first setup, so a new value in `.env` alone would lock every client out of InfluxDB and Grafana, and stop n8n from starting. Change those in the service itself (`SECURITY.md` explains how). `p4n4 secret show` lists all of them, masked.
 
 ```bash
 p4n4 secret

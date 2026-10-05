@@ -43,8 +43,8 @@ def _stack_source(name: str) -> str:
     the monorepo has it as a submodule under stacks/<name>."""
     candidates = [
         _REPO_ROOT.parent / f"p4n4-{name}",
-        _REPO_ROOT.parent.parent / "stacks" / name,
-        # The dashboard is a client, not a stack: clients/dashboard in the monorepo
+        _REPO_ROOT.parent / "stacks" / name,
+        # The dashboard is a client, not a stack: dashboard in the monorepo
         _REPO_ROOT.parent / name,
     ]
     for candidate in candidates:
@@ -572,8 +572,12 @@ def test_secret_rotates_iot_secrets(iot_project):
         os.chdir(old_cwd)
     assert result.exit_code == 0, result.output
     env_after = envutil.load(iot_project / ".env")
-    for key in ("INFLUXDB_PASSWORD", "INFLUXDB_TOKEN", "GRAFANA_PASSWORD", "NODE_RED_PASSWORD"):
-        assert env_after[key] != env_before[key], f"{key} was not rotated"
+    assert env_after["NODE_RED_PASSWORD"] != env_before["NODE_RED_PASSWORD"]
+    # InfluxDB and Grafana keep their first password and token: rotating .env
+    # alone would lock every client out
+    for key in ("INFLUXDB_PASSWORD", "INFLUXDB_TOKEN", "GRAFANA_PASSWORD"):
+        assert env_after[key] == env_before[key], f"{key} was rotated"
+        assert key in result.output
 
 
 def test_secret_rotates_ai_secrets(ai_project):
@@ -586,8 +590,9 @@ def test_secret_rotates_ai_secrets(ai_project):
         os.chdir(old_cwd)
     assert result.exit_code == 0, result.output
     env_after = envutil.load(ai_project / ".env")
-    for key in ("LETTA_SERVER_PASSWORD", "N8N_BASIC_AUTH_PASSWORD", "N8N_ENCRYPTION_KEY"):
-        assert env_after[key] != env_before[key], f"{key} was not rotated"
+    assert env_after["LETTA_SERVER_PASSWORD"] != env_before["LETTA_SERVER_PASSWORD"]
+    # n8n won't start with an encryption key its credentials weren't stored with
+    assert env_after["N8N_ENCRYPTION_KEY"] == env_before["N8N_ENCRYPTION_KEY"]
 
 
 # ── Stack lifecycle (require manifest) ────────────────────────────────────────
@@ -619,6 +624,176 @@ def test_logs_requires_manifest():
         result = runner.invoke(app, ["logs"])
         assert result.exit_code != 0
         assert ".p4n4.json" in result.output
+
+
+def test_up_stops_before_starting_when_names_are_taken(tmp_path, monkeypatch):
+    from p4n4_lib import compose
+
+    from p4n4.commands import lifecycle
+
+    for layer in ("iot", "dashboard"):
+        (tmp_path / layer).mkdir()
+        (tmp_path / layer / "docker-compose.yml").write_text("services: {}\n")
+    (tmp_path / ".p4n4.json").write_text(
+        json.dumps({"schema_version": 1, "project": "demo", "layers": ["iot", "dashboard"]})
+    )
+    other = tmp_path.parent / f"{tmp_path.name}-other"
+    (other / "iot").mkdir(parents=True)
+    (other / ".p4n4.json").write_text("{}")
+    standalone = tmp_path.parent / f"{tmp_path.name}-standalone"
+    standalone.mkdir()
+
+    taken = {
+        "iot": [
+            compose.NameConflict("p4n4-influxdb", "running", "other-iot", other / "iot"),
+            compose.NameConflict("p4n4-mqtt", "running", "other-iot", other / "iot"),
+        ],
+        "dashboard": [
+            compose.NameConflict("p4n4-dashboard", "running", "dashboard", standalone),
+            compose.NameConflict("p4n4-grafana", "exited", None, None),
+        ],
+    }
+    started = []
+    monkeypatch.setattr(
+        compose, "name_conflicts", lambda *dirs: [c for d in dirs for c in taken[d.name]]
+    )
+    monkeypatch.setattr(lifecycle.compose, "up", lambda cwd, **kw: started.append(cwd) or 0)
+
+    result = _run_in(tmp_path, ["up"], catch_exceptions=False)
+    assert result.exit_code == 1
+    assert started == []
+    output = " ".join(result.output.split())
+    assert "p4n4-influxdb (running) — project other-iot" in output
+    assert "p4n4-grafana (exited) — a container outside Compose" in output
+    # One hint per owner: a p4n4 project, a plain Compose project, a bare container
+    assert output.count("&& p4n4 down") == 1
+    assert f"cd {other} && p4n4 down" in output
+    assert f"cd {standalone} && docker compose down" in output
+    assert "docker rm -f p4n4-grafana" in output
+    assert "p4n4 down --all" in output
+
+
+def test_up_starts_when_no_names_are_taken(tmp_path, monkeypatch):
+    from p4n4_lib import compose
+
+    from p4n4.commands import lifecycle
+
+    (tmp_path / "docker-compose.yml").write_text("services: {}\n")
+    (tmp_path / ".p4n4.json").write_text(
+        json.dumps({"schema_version": 1, "project": "demo", "layers": ["iot"]})
+    )
+    started = []
+    monkeypatch.setattr(compose, "name_conflicts", lambda *dirs: [])
+    monkeypatch.setattr(lifecycle.compose, "up", lambda cwd, **kw: started.append(cwd) or 0)
+
+    result = _run_in(tmp_path, ["up"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert started == [tmp_path]
+
+
+def test_up_creates_the_network_for_stacks_that_join_it(tmp_path, monkeypatch):
+    from p4n4_lib import compose
+
+    from p4n4.commands import lifecycle
+
+    for layer in ("iot", "ai"):
+        (tmp_path / layer).mkdir()
+        (tmp_path / layer / "docker-compose.yml").write_text("services: {}\n")
+    (tmp_path / ".p4n4.json").write_text(
+        json.dumps({"schema_version": 1, "project": "demo", "layers": ["iot", "ai"]})
+    )
+    events = []
+    monkeypatch.setattr(compose, "name_conflicts", lambda *dirs: [])
+    monkeypatch.setattr(
+        lifecycle.compose, "ensure_network", lambda name, subnet: events.append(name) or True
+    )
+    monkeypatch.setattr(lifecycle.compose, "up", lambda cwd, **kw: events.append(cwd.name) or 0)
+
+    result = _run_in(tmp_path, ["up", "ai"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    # ai declares p4n4-net external, so it must exist before ai starts
+    assert events == ["p4n4-net", "ai"]
+    assert "Created the p4n4-net network" in result.output
+
+    events.clear()
+    result = _run_in(tmp_path, ["up", "iot"], catch_exceptions=False)
+    assert events == ["iot"]  # iot creates the network itself
+
+
+def test_stop_hint_for_a_removed_project_dir(tmp_path):
+    from p4n4_lib import compose
+
+    from p4n4.commands.lifecycle import _stop_hint
+
+    gone = compose.NameConflict("p4n4-mqtt", "running", "old-iot", tmp_path / "gone")
+    assert _stop_hint(gone) == "docker compose -p old-iot down"
+
+
+def _host_projects(tmp_path):
+    from p4n4_lib import compose
+
+    return [
+        compose.HostProject("b-ai", tmp_path / "b" / "ai", (("p4n4-ollama", "running"),)),
+        compose.HostProject("a-iot", tmp_path / "a" / "iot", (("p4n4-mqtt", "exited"),)),
+    ]
+
+
+def test_down_all_lists_then_stops_every_project(tmp_path, monkeypatch):
+    from p4n4.commands import lifecycle
+
+    stopped = []
+    monkeypatch.setattr(lifecycle.compose, "host_projects", lambda: _host_projects(tmp_path))
+    monkeypatch.setattr(
+        lifecycle.compose,
+        "down_project",
+        lambda project, volumes: stopped.append((project.name, volumes)) or 0,
+    )
+    # Runs outside any project
+    result = _run_in(tmp_path, ["down", "--all"], input="y\n", catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert stopped == [("b-ai", False), ("a-iot", False)]
+    output = " ".join(result.output.split())
+    assert f"b-ai in {tmp_path / 'b' / 'ai'}" in output
+    assert "p4n4-mqtt (exited)" in output
+
+
+def test_down_all_aborts_without_confirmation(tmp_path, monkeypatch):
+    from p4n4.commands import lifecycle
+
+    stopped = []
+    monkeypatch.setattr(lifecycle.compose, "host_projects", lambda: _host_projects(tmp_path))
+    monkeypatch.setattr(lifecycle.compose, "down_project", lambda *a, **kw: stopped.append(a))
+    result = _run_in(tmp_path, ["down", "--all", "--volumes"], input="n\n")
+    assert result.exit_code != 0
+    assert "deletes their persistent volumes" in result.output
+    assert stopped == []
+
+
+def test_down_all_reports_failures(tmp_path, monkeypatch):
+    from p4n4.commands import lifecycle
+
+    monkeypatch.setattr(lifecycle.compose, "host_projects", lambda: _host_projects(tmp_path))
+    monkeypatch.setattr(
+        lifecycle.compose, "down_project", lambda project, volumes: int(project.name == "b-ai")
+    )
+    result = _run_in(tmp_path, ["down", "--all"], input="y\n")
+    assert result.exit_code == 1
+    assert "Could not stop: b-ai" in result.output
+
+
+def test_down_all_with_nothing_running(tmp_path, monkeypatch):
+    from p4n4.commands import lifecycle
+
+    monkeypatch.setattr(lifecycle.compose, "host_projects", lambda: [])
+    result = _run_in(tmp_path, ["down", "--all"], catch_exceptions=False)
+    assert result.exit_code == 0
+    assert "No p4n4 containers" in result.output
+
+
+def test_down_all_rejects_a_stack_name(tmp_path):
+    result = _run_in(tmp_path, ["down", "iot", "--all"])
+    assert result.exit_code == 1
+    assert "--all" in result.output
 
 
 # ── p4n4 init: edge ──────────────────────────────────────────────────────────
@@ -771,7 +946,7 @@ def test_init_wizard_asks_for_external_broker(tmp_path, monkeypatch):
         def __init__(self, *_args, **_kwargs):
             self.answer = next(answers)
 
-        def ask(self):
+        def unsafe_ask(self):
             return self.answer
 
     for name in ("text", "password", "confirm"):
@@ -791,3 +966,47 @@ def test_init_wizard_asks_for_external_broker(tmp_path, monkeypatch):
         assert env["MQTT_REMOTE_CA_FILE"] == "ca.pem"
         assert Path("proj/config/mosquitto/certs/ca.pem").is_file()
     assert next(answers, None) is None, "wizard asked fewer questions than expected"
+
+
+def test_init_wizard_ctrl_c_aborts_without_a_project(tmp_path, monkeypatch):
+    from p4n4.commands import init as init_cmd
+
+    class _Prompt:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def unsafe_ask(self):
+            raise KeyboardInterrupt  # what questionary raises on Ctrl+C
+
+    monkeypatch.setattr(init_cmd.questionary, "text", _Prompt)
+
+    with _isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(app, ["init", "proj", "--source-iot", _IOT_SOURCE])
+        assert result.exit_code != 0
+        assert not Path("proj").exists()
+
+
+def test_init_n8n_key_prompt_rejects_short_keys(monkeypatch):
+    from p4n4.commands import init as init_cmd
+
+    seen = {}
+
+    class _Prompt:
+        def __init__(self, _prompt, validate=None, **_kwargs):
+            seen["validate"] = validate
+
+        def unsafe_ask(self):
+            return ""
+
+    monkeypatch.setattr(init_cmd.questionary, "password", _Prompt)
+
+    assert init_cmd._ask_password("key", "generated", min_length=32) == "generated"
+    validate = seen["validate"]
+    assert validate("") is True  # blank: auto-generate
+    assert validate("x" * 32) is True
+    assert "32" in validate("too-short")
+
+
+def test_init_ai_layer_gets_the_timezone(ai_project):
+    # n8n's schedules and date expressions use it (n8n defaults to New York time)
+    assert envutil.load(ai_project / ".env")["TZ"] == "UTC"

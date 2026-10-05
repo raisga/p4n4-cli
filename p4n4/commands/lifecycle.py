@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from p4n4_lib import compose
+from p4n4_lib import compose, layout
 from p4n4_lib import env as envutil
+from p4n4_lib import manifest as mf
 from rich.console import Console
 from rich.table import Table
 
@@ -22,7 +23,7 @@ console = Console()
 def _compose_errors() -> Iterator[None]:
     try:
         yield
-    except compose.ComposeNotFoundError as exc:
+    except (compose.ComposeNotFoundError, compose.DockerError) as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
 
@@ -34,6 +35,41 @@ def dashboard_url(cwd: Path) -> str:
     bind = env.get("DASHBOARD_BIND") or "0.0.0.0"
     host = "localhost" if bind in ("0.0.0.0", "::") else bind
     return f"http://{host}:{env.get('DASHBOARD_PORT') or '8088'}"
+
+
+def _stop_hint(conflict: compose.NameConflict) -> str:
+    """The command that frees the container name `conflict` holds."""
+    wd = conflict.working_dir
+    if conflict.project is None:
+        return f"docker rm -f {conflict.name}"
+    if wd is None or not wd.is_dir():
+        return f"docker compose -p {conflict.project} down"
+    manifest_path = mf.find(wd)
+    if manifest_path is not None:
+        return f"cd {manifest_path.parent} && p4n4 down"
+    return f"cd {wd} && docker compose down"
+
+
+def _check_name_conflicts(dirs: list[tuple[str, Path]]) -> None:
+    """Exit before starting anything if another project holds this one's container names."""
+    with _compose_errors():
+        conflicts = compose.name_conflicts(*(cwd for _, cwd in dirs))
+    if not conflicts:
+        return
+
+    console.print("[red]Error:[/red] Container names this project uses are already taken:")
+    for c in conflicts:
+        owner = f"project [bold]{c.project}[/bold]" if c.project else "a container outside Compose"
+        where = f" in {c.working_dir}" if c.working_dir else ""
+        console.print(f"  [bold]{c.name}[/bold] ({c.state}) — {owner}{where}")
+    console.print(
+        "\np4n4 stacks use fixed container names and host ports, so only one project "
+        "can run on a host at a time. Stop the other one first:"
+    )
+    for hint in dict.fromkeys(_stop_hint(c) for c in conflicts):
+        console.print(f"  [bold]{hint}[/bold]", soft_wrap=True)
+    console.print("Or stop every p4n4 project at once: [bold]p4n4 down --all[/bold]")
+    raise typer.Exit(1)
 
 
 def up(
@@ -49,14 +85,57 @@ def up(
     ] = False,
 ) -> None:
     """Start one or all enabled stacks in dependency order."""
-    for name, cwd in require_compose_dirs(stack):
+    dirs = require_compose_dirs(stack)
+    _check_name_conflicts(dirs)
+    for name, cwd in dirs:
         console.print(f"[cyan]Starting [bold]{name}[/bold] stack in[/cyan] [bold]{cwd}[/bold] ...")
         with _compose_errors():
+            # Only iot creates p4n4-net; the other stacks need it to exist already
+            # (an AI-only project, or `p4n4 up ai` while iot is down)
+            if name != "iot" and compose.ensure_network(layout.NETWORK, layout.NETWORK_SUBNET):
+                console.print(f"[dim]Created the {layout.NETWORK} network.[/dim]")
             rc = compose.up(cwd, build=build, pull=pull, detach=not no_detach)
         if rc != 0:
             raise typer.Exit(rc)
         if name == "dashboard":
             console.print(f"[green]Dashboard:[/green] {dashboard_url(cwd)}")
+
+
+def _down_all(volumes: bool) -> None:
+    """Stop every p4n4 project on this host, whichever directory it lives in."""
+    with _compose_errors():
+        projects = compose.host_projects()
+    if not projects:
+        console.print("[green]No p4n4 containers on this host.[/green]")
+        return
+
+    console.print("This stops every p4n4 project on this host:")
+    for project in projects:
+        if project.name is None:
+            console.print("  [bold]Containers outside Compose[/bold]")
+        else:
+            where = f" in {project.working_dir}" if project.working_dir else ""
+            console.print(f"  [bold]{project.name}[/bold]{where}")
+        names = ", ".join(f"{name} ({state})" for name, state in project.containers)
+        console.print(f"    {names}", soft_wrap=True)
+    prompt = (
+        "This also deletes their persistent volumes (data loss). Continue?"
+        if volumes
+        else "Stop them all?"
+    )
+    if not typer.confirm(prompt, default=False):
+        raise typer.Abort()
+
+    failed = []
+    for project in projects:
+        label = project.name or "containers outside Compose"
+        console.print(f"[cyan]Stopping [bold]{label}[/bold] ...[/cyan]")
+        with _compose_errors():
+            if compose.down_project(project, volumes=volumes) != 0:
+                failed.append(label)
+    if failed:
+        console.print(f"[red]Error:[/red] Could not stop: {', '.join(failed)}")
+        raise typer.Exit(1)
 
 
 def down(
@@ -66,8 +145,18 @@ def down(
     volumes: Annotated[
         bool, typer.Option("--volumes", help="Also remove persistent data volumes.")
     ] = False,
+    all_projects: Annotated[
+        bool,
+        typer.Option("--all", help="Stop every p4n4 project on this host, run from any directory."),
+    ] = False,
 ) -> None:
     """Stop one or all running stacks."""
+    if all_projects:
+        if stack:
+            console.print("[red]Error:[/red] --all stops every project; drop the stack name.")
+            raise typer.Exit(1)
+        _down_all(volumes)
+        return
     dirs = require_compose_dirs(stack)
     if volumes:
         confirmed = typer.confirm(

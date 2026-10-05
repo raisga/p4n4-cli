@@ -9,6 +9,44 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `p4n4 down --all`: stops every p4n4 project on the host, from any directory. It lists
+  each project with its folder and containers and asks first; `--volumes` also deletes
+  their data. Projects that own `p4n4-net` stop last, so the network is removed too.
+
+### Changed
+
+- `p4n4 up` checks every stack before starting any of them. If another project's
+  containers hold the fixed `p4n4-*` names (another p4n4 project is still up), it lists
+  them and prints the command that stops each owner, instead of starting part of the
+  project and then failing with Docker's "container name is already in use" error.
+  The error also suggests `p4n4 down --all`.
+- `p4n4 secret rotate` no longer rotates `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN`,
+  `GRAFANA_PASSWORD`, `N8N_ENCRYPTION_KEY` or the unused `N8N_BASIC_AUTH_PASSWORD`, and
+  says so. Their services keep the value from first setup, so rotating `.env` alone
+  locked every client out of InfluxDB and Grafana, and stopped n8n from starting.
+  `SECURITY.md` explains how to change them inside the services. `secret show` still
+  lists them.
+- `p4n4 init` writes `TZ` to the AI layer's `.env` too, so n8n's schedules and date
+  expressions use the project's timezone instead of America/New_York.
+
+### Fixed
+
+- AI-only and edge-only projects start: `p4n4 up` creates the `p4n4-net` network those
+  stacks join when it's missing. Only the IoT stack created it, so `up` failed without
+  it. The same goes for `p4n4 up ai` while the IoT stack is down.
+- `p4n4 status` lists stopped and crashed services, and reports an error when Docker or
+  Compose fails, instead of "No services found".
+- Ctrl+C at a `p4n4 init` prompt aborts. Before, it took the prompt's default and
+  carried on scaffolding.
+- `p4n4 init` checks that a typed n8n encryption key has the 32 characters it asks for.
+
+`secret rotate`, `up` and `status` need `p4n4-lib` with `secrets.SETUP_KEYS`,
+`compose.ensure_network` and the new `compose.ps` (unreleased). Both `up` changes
+need `p4n4-lib` with `compose.name_conflicts`, `host_projects` and `down_project`
+(unreleased).
+
 ## [0.2.0] - 2026-10-03
 
 ### Upgrading from 0.1.x
