@@ -71,7 +71,7 @@ def rotate() -> None:
         console.print(
             "[dim]Not rotated, because their services keep the value from first setup: "
             f"{', '.join(setup_only)}. Change them in the service itself "
-            "(see SECURITY.md).[/dim]\n"
+            "(see the Security guide: https://github.com/raisga/p4n4-docs/blob/main/guides/security.md#secret-rotation).[/dim]\n"
         )
 
     # One new value per key, shared across stacks so cross-stack keys

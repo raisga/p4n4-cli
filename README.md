@@ -45,7 +45,7 @@ P4N4 is a unified developer platform for IoT and Edge AI. It combines the **MING
 
 `p4n4-cli` manages the full lifecycle — init, run, inspect, and tear down — from your terminal. Stack files are always fetched from the canonical source repos at init time, so projects are never pinned to a snapshot bundled inside the CLI.
 
-> **Trusted networks only.** p4n4 0.2.x is meant for development and trusted local networks. Don't expose its service ports to the internet or to networks you don't control. See [SECURITY.md](https://github.com/raisga/p4n4/blob/main/SECURITY.md).
+> **Trusted networks only.** p4n4 0.2.x is meant for development and trusted local networks. Don't expose its service ports to the internet or to networks you don't control. See the [Security guide](https://github.com/raisga/p4n4-docs/blob/main/guides/security.md).
 
 ---
 
@@ -456,7 +456,7 @@ Rotate secrets in `.env` with new randomly generated values. Prompts for confirm
 - **IoT layer:** `NODE_RED_PASSWORD`
 - **AI layer:** `LETTA_SERVER_PASSWORD`
 
-It doesn't rotate `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN`, `GRAFANA_PASSWORD` or `N8N_ENCRYPTION_KEY`, and says so. Their services keep the value from their first setup, so a new value in `.env` alone would lock every client out of InfluxDB and Grafana, and stop n8n from starting. Change those in the service itself (`SECURITY.md` explains how). `p4n4 secret show` lists all of them, masked.
+It doesn't rotate `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN`, `GRAFANA_PASSWORD` or `N8N_ENCRYPTION_KEY`, and says so. Their services keep the value from their first setup, so a new value in `.env` alone would lock every client out of InfluxDB and Grafana, and stop n8n from starting. Change those in the service itself (the [Security guide](https://github.com/raisga/p4n4-docs/blob/main/guides/security.md#secret-rotation) explains how). `p4n4 secret show` lists all of them, masked.
 
 ```bash
 p4n4 secret

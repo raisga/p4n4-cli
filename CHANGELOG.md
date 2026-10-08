@@ -26,7 +26,8 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `GRAFANA_PASSWORD`, `N8N_ENCRYPTION_KEY` or the unused `N8N_BASIC_AUTH_PASSWORD`, and
   says so. Their services keep the value from first setup, so rotating `.env` alone
   locked every client out of InfluxDB and Grafana, and stopped n8n from starting.
-  `SECURITY.md` explains how to change them inside the services. `secret show` still
+  The p4n4-docs Security guide (`guides/security.md#secret-rotation`) explains how to
+  change them inside the services. `secret show` still
   lists them.
 - `p4n4 init` writes `TZ` to the AI layer's `.env` too, so n8n's schedules and date
   expressions use the project's timezone instead of America/New_York.
