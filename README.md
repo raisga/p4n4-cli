@@ -355,25 +355,31 @@ p4n4 init my-ai-project --layer ai --source-ai ../p4n4-ai --no-interactive
 
 ### `p4n4 up`
 
-Start the project stack (`docker compose up -d`).
+Start the project's stacks (`docker compose up -d`), or one of them.
 
 ```bash
-p4n4 up [options]
+p4n4 up [stack] [options]
 ```
 
-| Flag | Description |
+| Argument / flag | Description |
 |------|-------------|
-| `--ai` | Start Gen AI services only |
-| `--edge` | Start Edge AI services only |
+| `stack` | Start one stack only: `iot`, `ai`, `edge` or `dashboard` |
 | `--build` | Rebuild images before starting |
 | `--pull` | Pull the latest images before starting |
+| `--no-detach` | Run in the foreground |
+| `--emu <profile>` | Run under [p4n4-emu](https://github.com/raisga/p4n4-emu) with a hardware profile (`rpi4`, `rpi5`, `nuc`, `mcu-class`): the device's CPU, memory and disk limits, and its architecture through QEMU |
 
 ```bash
 p4n4 up
 p4n4 up --pull
-p4n4 up --ai
-p4n4 up --edge
+p4n4 up ai
+p4n4 up --emu rpi5
 ```
+
+`--emu` runs `p4n4-emu up --profile <profile>` for the stacks, so `p4n4-emu` must be on
+`PATH` (`uv tool install git+https://github.com/raisga/p4n4-emu`). `p4n4 down` notices
+stacks started that way and stops them through `p4n4-emu down`, which also removes the
+resource-limit overlay and the sensor simulator.
 
 ---
 

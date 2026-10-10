@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -17,6 +19,13 @@ from rich.table import Table
 from p4n4.project import require_compose_dirs
 
 console = Console()
+
+EMU = "p4n4-emu"
+EMU_INSTALL = "uv tool install git+https://github.com/raisga/p4n4-emu"
+# Compose records the files a container was created from in this label; p4n4-emu's
+# resource-limit overlays are named <stack>.emu.yml
+_CONFIG_FILES_LABEL = "com.docker.compose.project.config_files="
+_EMU_OVERLAY_SUFFIX = ".emu.yml"
 
 
 @contextmanager
@@ -72,6 +81,28 @@ def _check_name_conflicts(dirs: list[tuple[str, Path]]) -> None:
     raise typer.Exit(1)
 
 
+def _emu_up(
+    dirs: list[tuple[str, Path]], profile: str, build: bool, pull: bool
+) -> int:
+    """Start the stacks under p4n4-emu's hardware profile `profile`."""
+    emu = shutil.which(EMU)
+    if emu is None:
+        console.print(
+            f"[red]Error:[/red] --emu needs {EMU}, which isn't installed. "
+            f"Install it with: [bold]{EMU_INSTALL}[/bold]"
+        )
+        raise typer.Exit(1)
+    names = ",".join(name for name, _ in dirs)
+    cmd = [emu, "up", "--profile", profile, "--stack", names]
+    if build:
+        cmd.append("--build")
+    if pull:
+        cmd.append("--pull")
+    console.print(f"[cyan]Starting [bold]{names}[/bold] under p4n4-emu ({profile}) ...[/cyan]")
+    # p4n4-emu resolves the stacks from the project's .p4n4.json, as p4n4 does
+    return subprocess.run(cmd, cwd=dirs[0][1], check=False).returncode
+
+
 def up(
     stack: Annotated[
         str | None, typer.Argument(help="Stack to start: iot, ai, edge, dashboard.")
@@ -83,20 +114,43 @@ def up(
     no_detach: Annotated[
         bool, typer.Option("--no-detach", help="Run in foreground (do not detach).")
     ] = False,
+    emu: Annotated[
+        str | None,
+        typer.Option(
+            "--emu",
+            metavar="PROFILE",
+            help="Run under p4n4-emu with a hardware profile (rpi4, rpi5, nuc, ...): "
+            "the device's CPU, memory and disk limits, and its architecture.",
+        ),
+    ] = None,
 ) -> None:
     """Start one or all enabled stacks in dependency order."""
+    if emu and no_detach:
+        console.print("[red]Error:[/red] --emu starts the stacks detached; drop --no-detach.")
+        raise typer.Exit(1)
     dirs = require_compose_dirs(stack)
     _check_name_conflicts(dirs)
-    for name, cwd in dirs:
-        console.print(f"[cyan]Starting [bold]{name}[/bold] stack in[/cyan] [bold]{cwd}[/bold] ...")
-        with _compose_errors():
-            # Only iot creates p4n4-net; the other stacks need it to exist already
-            # (an AI-only project, or `p4n4 up ai` while iot is down)
-            if name != "iot" and compose.ensure_network(layout.NETWORK, layout.NETWORK_SUBNET):
-                console.print(f"[dim]Created the {layout.NETWORK} network.[/dim]")
-            rc = compose.up(cwd, build=build, pull=pull, detach=not no_detach)
+    if emu:
+        rc = _emu_up(dirs, emu, build, pull)
         if rc != 0:
             raise typer.Exit(rc)
+    else:
+        for name, cwd in dirs:
+            console.print(
+                f"[cyan]Starting [bold]{name}[/bold] stack in[/cyan] [bold]{cwd}[/bold] ..."
+            )
+            with _compose_errors():
+                # Stacks that declare p4n4-net external need it to exist (an AI-only
+                # project, or `p4n4 up ai` while iot is down). iot declares it itself, but
+                # a p4n4-net made by `docker network create` lacks Compose's label and
+                # stops iot with "incorrect label"; ensure_network recreates it with the
+                # label while no container uses it.
+                if compose.ensure_network(layout.NETWORK, layout.NETWORK_SUBNET):
+                    console.print(f"[dim]Created the {layout.NETWORK} network.[/dim]")
+                rc = compose.up(cwd, build=build, pull=pull, detach=not no_detach)
+            if rc != 0:
+                raise typer.Exit(rc)
+    for name, cwd in dirs:
         if name == "dashboard":
             console.print(f"[green]Dashboard:[/green] {dashboard_url(cwd)}")
 
@@ -166,12 +220,34 @@ def down(
         if not confirmed:
             raise typer.Abort()
     # Reverse dependency order: dependents stop before the stacks they rely on
+    emu = shutil.which(EMU)
     for name, cwd in reversed(dirs):
         console.print(f"[cyan]Stopping [bold]{name}[/bold] stack in[/cyan] [bold]{cwd}[/bold] ...")
-        with _compose_errors():
-            rc = compose.down(cwd, volumes=volumes)
+        if emu and _runs_under_emu(cwd):
+            # p4n4-emu also removes its overlay, and the simulator with iot
+            cmd = [emu, "down", "--stack", name] + (["--volumes", "--yes"] if volumes else [])
+            rc = subprocess.run(cmd, cwd=cwd, check=False).returncode
+        else:
+            with _compose_errors():
+                rc = compose.down(cwd, volumes=volumes)
         if rc != 0:
             raise typer.Exit(rc)
+
+
+def _runs_under_emu(cwd: Path) -> bool:
+    """Whether the stack's containers were created with a p4n4-emu overlay."""
+    try:
+        services = compose.ps(cwd)
+    except (compose.ComposeNotFoundError, compose.DockerError):
+        return False
+    for svc in services:
+        labels = svc.get("Labels") or ""
+        files = labels.partition(_CONFIG_FILES_LABEL)[2]
+        # The label's value is comma-separated too, so look up to the next label
+        files = files.split(",com.docker.", 1)[0]
+        if any(f.endswith(_EMU_OVERLAY_SUFFIX) for f in files.split(",")):
+            return True
+    return False
 
 
 def status() -> None:

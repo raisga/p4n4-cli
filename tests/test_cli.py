@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -717,7 +718,110 @@ def test_up_creates_the_network_for_stacks_that_join_it(tmp_path, monkeypatch):
 
     events.clear()
     result = _run_in(tmp_path, ["up", "iot"], catch_exceptions=False)
-    assert events == ["iot"]  # iot creates the network itself
+    # iot declares it itself, but a p4n4-net without Compose's label would stop it
+    assert events == ["p4n4-net", "iot"]
+
+
+def _emu_project(tmp_path, monkeypatch, layers=("iot", "ai")):
+    """A multi-layer project with p4n4-emu on PATH and its calls recorded."""
+    from p4n4_lib import compose
+
+    from p4n4.commands import lifecycle
+
+    for layer in layers:
+        (tmp_path / layer).mkdir()
+        (tmp_path / layer / "docker-compose.yml").write_text("services: {}\n")
+    (tmp_path / ".p4n4.json").write_text(
+        json.dumps({"schema_version": 1, "project": "demo", "layers": list(layers)})
+    )
+    monkeypatch.setattr(compose, "name_conflicts", lambda *dirs: [])
+    monkeypatch.setattr(lifecycle.shutil, "which", lambda name: f"/bin/{name}")
+    calls = []
+
+    def run(cmd, cwd=None, **kw):
+        calls.append((cmd, Path(cwd).name))
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(lifecycle.subprocess, "run", run)
+    monkeypatch.setattr(
+        lifecycle.compose, "up", lambda cwd, **kw: pytest.fail("compose.up with --emu")
+    )
+    return calls
+
+
+def test_up_emu_shells_out_to_p4n4_emu(tmp_path, monkeypatch):
+    calls = _emu_project(tmp_path, monkeypatch)
+    result = _run_in(tmp_path, ["up", "--emu", "rpi5", "--pull"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        (["/bin/p4n4-emu", "up", "--profile", "rpi5", "--stack", "iot,ai", "--pull"], "iot")
+    ]
+
+
+def test_up_emu_one_stack(tmp_path, monkeypatch):
+    calls = _emu_project(tmp_path, monkeypatch)
+    result = _run_in(tmp_path, ["up", "ai", "--emu", "nuc"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert calls[0][0][-2:] == ["--stack", "ai"]
+
+
+def test_up_emu_needs_p4n4_emu(tmp_path, monkeypatch):
+    from p4n4.commands import lifecycle
+
+    calls = _emu_project(tmp_path, monkeypatch)
+    monkeypatch.setattr(lifecycle.shutil, "which", lambda name: None)
+    result = _run_in(tmp_path, ["up", "--emu", "rpi5"], catch_exceptions=False)
+    assert result.exit_code == 1
+    assert calls == []
+    assert "uv tool install" in " ".join(result.output.split())
+
+
+def test_up_emu_rejects_no_detach(tmp_path, monkeypatch):
+    calls = _emu_project(tmp_path, monkeypatch)
+    result = _run_in(tmp_path, ["up", "--emu", "rpi5", "--no-detach"], catch_exceptions=False)
+    assert result.exit_code == 1
+    assert calls == []
+
+
+def _labels(*files):
+    return (
+        "com.docker.compose.container-number=1,"
+        f"com.docker.compose.project.config_files={','.join(files)},"
+        "com.docker.compose.project.working_dir=/p/iot"
+    )
+
+
+def test_down_hands_emu_stacks_to_p4n4_emu(tmp_path, monkeypatch):
+    from p4n4.commands import lifecycle
+
+    calls = _emu_project(tmp_path, monkeypatch)
+    ps = {
+        "iot": [{"Labels": _labels("/p/iot/docker-compose.yml", "/o/p-1/iot.emu.yml")}],
+        "ai": [{"Labels": _labels("/p/ai/docker-compose.yml")}],
+    }
+    downs = []
+    monkeypatch.setattr(lifecycle.compose, "ps", lambda cwd: ps[cwd.name])
+    monkeypatch.setattr(
+        lifecycle.compose, "down", lambda cwd, volumes=False: downs.append(cwd.name) or 0
+    )
+    result = _run_in(tmp_path, ["down", "--volumes"], input="y\n", catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert downs == ["ai"]
+    assert calls == [(["/bin/p4n4-emu", "down", "--stack", "iot", "--volumes", "--yes"], "iot")]
+
+
+def test_down_without_p4n4_emu_uses_compose(tmp_path, monkeypatch):
+    from p4n4.commands import lifecycle
+
+    calls = _emu_project(tmp_path, monkeypatch, layers=("iot",))
+    monkeypatch.setattr(lifecycle.shutil, "which", lambda name: None)
+    downs = []
+    monkeypatch.setattr(
+        lifecycle.compose, "down", lambda cwd, volumes=False: downs.append(cwd.name) or 0
+    )
+    result = _run_in(tmp_path, ["down"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert calls == [] and len(downs) == 1
 
 
 def test_stop_hint_for_a_removed_project_dir(tmp_path):

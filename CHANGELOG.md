@@ -14,9 +14,17 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `p4n4 down --all`: stops every p4n4 project on the host, from any directory. It lists
   each project with its folder and containers and asks first; `--volumes` also deletes
   their data. Projects that own `p4n4-net` stop last, so the network is removed too.
+- `p4n4 up --emu <profile>`: starts the stacks under p4n4-emu with a hardware profile
+  (`rpi4`, `rpi5`, `nuc`, `mcu-class`), by running `p4n4-emu up`. `p4n4 down` stops stacks
+  whose containers were created with a p4n4-emu overlay through `p4n4-emu down`, so the
+  overlay and the sensor simulator go with them.
 
 ### Changed
 
+- `p4n4 up` makes sure `p4n4-net` exists with Compose's label before iot too, not only
+  before the stacks that join it. A `p4n4-net` made with `docker network create` stopped
+  iot with "incorrect label"; it is now recreated with the label while no container uses
+  it (needs the `p4n4-lib` with that `compose.ensure_network`).
 - `p4n4 up` checks every stack before starting any of them. If another project's
   containers hold the fixed `p4n4-*` names (another p4n4 project is still up), it lists
   them and prints the command that stops each owner, instead of starting part of the
