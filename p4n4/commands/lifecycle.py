@@ -81,9 +81,7 @@ def _check_name_conflicts(dirs: list[tuple[str, Path]]) -> None:
     raise typer.Exit(1)
 
 
-def _emu_up(
-    dirs: list[tuple[str, Path]], profile: str, build: bool, pull: bool
-) -> int:
+def _emu_up(dirs: list[tuple[str, Path]], profile: str, build: bool, pull: bool) -> int:
     """Start the stacks under p4n4-emu's hardware profile `profile`."""
     emu = shutil.which(EMU)
     if emu is None:

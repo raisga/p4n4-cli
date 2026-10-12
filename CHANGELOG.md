@@ -9,6 +9,8 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-12
+
 ### Added
 
 - `p4n4 down --all`: stops every p4n4 project on the host, from any directory. It lists
@@ -24,7 +26,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `p4n4 up` makes sure `p4n4-net` exists with Compose's label before iot too, not only
   before the stacks that join it. A `p4n4-net` made with `docker network create` stopped
   iot with "incorrect label"; it is now recreated with the label while no container uses
-  it (needs the `p4n4-lib` with that `compose.ensure_network`).
+  it.
 - `p4n4 up` checks every stack before starting any of them. If another project's
   containers hold the fixed `p4n4-*` names (another p4n4 project is still up), it lists
   them and prints the command that stops each owner, instead of starting part of the
@@ -35,8 +37,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   says so. Their services keep the value from first setup, so rotating `.env` alone
   locked every client out of InfluxDB and Grafana, and stopped n8n from starting.
   The p4n4-docs Security guide (`guides/security.md#secret-rotation`) explains how to
-  change them inside the services. `secret show` still
-  lists them.
+  change them inside the services. `secret show` still lists them.
 - `p4n4 init` writes `TZ` to the AI layer's `.env` too, so n8n's schedules and date
   expressions use the project's timezone instead of America/New_York.
 
@@ -51,10 +52,11 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   carried on scaffolding.
 - `p4n4 init` checks that a typed n8n encryption key has the 32 characters it asks for.
 
-`secret rotate`, `up` and `status` need `p4n4-lib` with `secrets.SETUP_KEYS`,
-`compose.ensure_network` and the new `compose.ps` (unreleased). Both `up` changes
-need `p4n4-lib` with `compose.name_conflicts`, `host_projects` and `down_project`
-(unreleased).
+### Dependencies
+
+- Requires `p4n4-lib>=0.2.1`, for `secrets.SETUP_KEYS`, `compose.ensure_network`,
+  `compose.ps`, `compose.name_conflicts`, `compose.host_projects` and
+  `compose.down_project`.
 
 ## [0.2.0] - 2026-10-03
 
@@ -204,7 +206,8 @@ need `p4n4-lib` with `compose.name_conflicts`, `host_projects` and `down_project
 - CI matrix across Python 3.11, 3.12, 3.13
 - PyPI publishing workflow via Trusted Publisher
 
-[Unreleased]: https://github.com/raisga/p4n4-cli/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/raisga/p4n4-cli/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/raisga/p4n4-cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/raisga/p4n4-cli/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/raisga/p4n4-cli/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/raisga/p4n4-cli/releases/tag/v0.1.0
