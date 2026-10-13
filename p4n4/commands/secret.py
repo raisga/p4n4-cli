@@ -10,6 +10,7 @@ from p4n4_lib import secrets as secretutil
 from rich.console import Console
 from rich.table import Table
 
+from p4n4.commands import ai
 from p4n4.project import require_compose_dirs
 
 app = typer.Typer(help="Manage project secrets.")
@@ -103,6 +104,14 @@ def rotate() -> None:
             envutil.write(path, {**env, **updates})
 
     console.print("\n[green]✓[/green] Secrets rotated in [bold].env[/bold]")
+
+    # Post-rotation hooks: copies of a key that live outside .env (n8n's credentials;
+    # the iot layer's copy of SYSTEM1_API_KEY got the same new value above)
+    for name, path, env in envs:
+        rotated = {k: v for k, v in new_values.items() if k in ai.N8N_CREDENTIALS and k in env}
+        if name == "ai" and rotated:
+            result = ai.sync_n8n_credentials(path.parent, rotated)
+            console.print(f"  n8n credentials: {result}")
     console.print(
         "[yellow]Remember to run [bold]p4n4 down && p4n4 up[/bold] "
         "to apply the new secrets.[/yellow]"

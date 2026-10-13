@@ -9,6 +9,25 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `p4n4 ai system1`: System 1, fast typed decisions with laya, off by default.
+  `enable` adds the `system1` profile, generates `SYSTEM1_API_KEY` if needed, copies any
+  missing default question sets, writes n8n's `p4n4 System 1` credential, pulls the
+  pinned checkpoint and waits for the service; `disable [--purge]`, `pull`, `status`,
+  `decide <set> --state FILE|-`, and `eval [<set>] [--no-gates] [--fit-thresholds]
+  [--fit-calibration]`, which exits 5 when a set fails its gates. `decide` and `eval`
+  talk to the service through `docker compose exec`, so no host port is needed.
+- `p4n4 init` generates `SYSTEM1_API_KEY` for the ai layer, and `p4n4 secret rotate`
+  rotates it and updates the n8n credential.
+- `p4n4 ai system1 feedback <set> [--append]`: confirmations Node-RED kept with their
+  state become evaluation lines. `eval` reports each language and gates each one, and
+  `--fit-calibration` also proposes per-question temperatures. `status` flags sets the
+  running service loaded before their files changed.
+- `p4n4 ai system1 enable` and `p4n4 init` also generate `OPERATOR_INTAKE_TOKEN` and n8n's
+  `p4n4 Operator Intake` credential, and give the iot layer the same `SYSTEM1_API_KEY` for
+  Node-RED's `p4n4-system1` subflow; `p4n4 secret rotate` keeps both credentials in step.
+
 ## [0.2.1] - 2026-10-12
 
 ### Added

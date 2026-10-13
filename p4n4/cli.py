@@ -8,7 +8,7 @@ import typer
 from rich.console import Console
 
 from p4n4 import __version__
-from p4n4.commands import add, ei, init, lifecycle, remove, secret, template, upgrade, validate
+from p4n4.commands import add, ai, ei, init, lifecycle, remove, secret, template, upgrade, validate
 
 # Windows encodes redirected output as cp1252, which can't print ✓/✗; the
 # resulting UnicodeEncodeError fails commands that already succeeded.
@@ -26,6 +26,7 @@ app = typer.Typer(
 console = Console()
 
 # ── sub-apps ──────────────────────────────────────────────────────────────────
+app.add_typer(ai.app, name="ai")
 app.add_typer(ei.app, name="ei")
 app.add_typer(template.app, name="template")
 app.add_typer(secret.app, name="secret")
