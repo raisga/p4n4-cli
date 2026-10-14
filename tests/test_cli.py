@@ -581,6 +581,19 @@ def test_secret_rotates_iot_secrets(iot_project):
         assert key in result.output
 
 
+def test_secret_rotate_keeps_env_comments(iot_project):
+    env_path = iot_project / ".env"
+    env_path.write_text("# Node-RED editor login\n" + env_path.read_text())
+    old_cwd = os.getcwd()
+    os.chdir(iot_project)
+    try:
+        result = runner.invoke(app, ["secret", "rotate"], input="y\n", catch_exceptions=False)
+    finally:
+        os.chdir(old_cwd)
+    assert result.exit_code == 0, result.output
+    assert env_path.read_text().startswith("# Node-RED editor login\n")
+
+
 def test_secret_rotates_ai_secrets(ai_project):
     env_before = envutil.load(ai_project / ".env")
     old_cwd = os.getcwd()

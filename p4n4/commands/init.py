@@ -332,8 +332,10 @@ def cmd(
             n8n_encryption_key = secretutil.token(16)
             n8n_host = "localhost"
 
-    # Shared by the ai layer's System 1 service and the iot layer's p4n4-system1 subflow
+    # Shared by the ai layer's System 1 service and the iot layer's p4n4-system1 subflow,
+    # and by Grafana's drift alerts (iot) and n8n's credential for them (ai)
     system1_key = secretutil.token()
+    system1_alert_token = secretutil.token()
 
     iot_env_values: dict[str, str] = {
         "TZ": tz,
@@ -354,7 +356,11 @@ def cmd(
         # The dashboard's web UI frames Grafana in its Grafana tab
         "GRAFANA_ALLOW_EMBEDDING": "true" if "dashboard" in layers else "false",
         # Node-RED's p4n4-system1 subflow calls the ai layer's System 1 with it
-        **({"SYSTEM1_API_KEY": system1_key} if "ai" in layers else {}),
+        **(
+            {"SYSTEM1_API_KEY": system1_key, "SYSTEM1_ALERT_TOKEN": system1_alert_token}
+            if "ai" in layers
+            else {}
+        ),
         **mqtt_remote_env,
     }
 
@@ -369,6 +375,7 @@ def cmd(
         # Generated now so `p4n4 ai system1 enable` needs no new secret later
         "SYSTEM1_API_KEY": system1_key,
         "OPERATOR_INTAKE_TOKEN": secretutil.token(),
+        "SYSTEM1_ALERT_TOKEN": system1_alert_token,
         # Shared InfluxDB values (must match p4n4-iot when used alongside it)
         "INFLUXDB_TOKEN": influx_token,
         "INFLUXDB_ORG": org,

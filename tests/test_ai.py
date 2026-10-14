@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 
 import pytest
 from p4n4_lib import env as envutil
@@ -150,14 +151,10 @@ def test_secret_rotate_updates_the_n8n_credential(ai_project, monkeypatch):
     result = _run_in(ai_project, ["secret", "rotate"], input="y\n", catch_exceptions=False)
     assert result.exit_code == 0, result.output
     after = envutil.load(ai_project / ".env")
-    for key in ("SYSTEM1_API_KEY", "OPERATOR_INTAKE_TOKEN"):
+    keys = ("SYSTEM1_API_KEY", "OPERATOR_INTAKE_TOKEN", "SYSTEM1_ALERT_TOKEN")
+    for key in keys:
         assert after[key] != before[key]
-    assert synced == [
-        {
-            "SYSTEM1_API_KEY": after["SYSTEM1_API_KEY"],
-            "OPERATOR_INTAKE_TOKEN": after["OPERATOR_INTAKE_TOKEN"],
-        }
-    ]
+    assert synced == [{k: after[k] for k in keys}]
     assert "n8n credentials: updated" in result.output
 
 
@@ -166,6 +163,8 @@ def test_init_shares_the_system1_key_with_the_iot_layer(iot_ai_project):
     iot_env = envutil.load(iot_ai_project / "iot" / ".env")
     assert len(ai_env["OPERATOR_INTAKE_TOKEN"]) == 64
     assert iot_env["SYSTEM1_API_KEY"] == ai_env["SYSTEM1_API_KEY"]
+    assert len(ai_env["SYSTEM1_ALERT_TOKEN"]) == 64
+    assert iot_env["SYSTEM1_ALERT_TOKEN"] == ai_env["SYSTEM1_ALERT_TOKEN"]
     assert "OPERATOR_INTAKE_TOKEN" not in iot_env
 
 
@@ -234,6 +233,7 @@ def test_enable_on_an_older_project_adds_key_and_sets(ai_project, docker):
     env_path.write_text("\n".join(lines) + "\n")
     for f in (ai_project / SETS).iterdir():
         f.unlink()
+    shutil.rmtree(ai_project / ai.CALIBRATION_DIR, ignore_errors=True)
     result = _run_in(
         ai_project,
         [
@@ -254,6 +254,8 @@ def test_enable_on_an_older_project_adds_key_and_sets(ai_project, docker):
     assert env["SYSTEM1_CHECKPOINT"] == "english"
     assert "incident-triage.json" in result.output
     assert (ai_project / SETS / "incident-triage.eval.jsonl").is_file()
+    # Ours before Compose mounts it, or Docker creates it as root
+    assert (ai_project / ai.CALIBRATION_DIR).is_dir()
 
 
 def test_enable_rejects_unknown_checkpoint(ai_project, docker):
@@ -399,18 +401,27 @@ def test_status_without_a_service(ai_project, docker):
     assert "missing" in result.output and "never" in result.output
 
 
+def test_status_names_a_fine_tuned_repository(ai_project, docker):
+    envutil.set_value(ai_project / ".env", "SYSTEM1_REPO", "example/p4n4-laya")
+    result = _run_in(ai_project, ["ai", "system1", "status"])
+    assert result.exit_code == 0, result.output
+    assert "multilingual from example/p4n4-laya" in result.output
+
+
 # ── enable with an iot layer, feedback ──────────────────────────────────────
 
 
 def test_enable_copies_the_key_to_the_iot_layer(iot_ai_project, docker):
     iot_env = iot_ai_project / "iot" / ".env"
     envutil.set_value(iot_env, "SYSTEM1_API_KEY", "")
+    envutil.set_value(iot_env, "SYSTEM1_ALERT_TOKEN", "")
     result = _run_in(
         iot_ai_project, ["ai", "system1", "enable", "--no-pull", "--source-ai", _AI_SOURCE]
     )
     assert result.exit_code == 0, result.output
-    key = envutil.load(iot_ai_project / "ai" / ".env")["SYSTEM1_API_KEY"]
-    assert envutil.load(iot_env)["SYSTEM1_API_KEY"] == key
+    ai_env = envutil.load(iot_ai_project / "ai" / ".env")
+    for key in ("SYSTEM1_API_KEY", "SYSTEM1_ALERT_TOKEN"):
+        assert envutil.load(iot_env)[key] == ai_env[key]
     assert "copied to the iot layer" in result.output
 
 
@@ -473,3 +484,90 @@ def test_feedback_prints_and_appends_new_examples(iot_ai_project, monkeypatch):
 def test_feedback_needs_an_iot_layer(ai_project, docker):
     result = _run_in(ai_project, ["ai", "system1", "feedback", "operator-intake"])
     assert result.exit_code == 1 and "no iot layer" in result.output
+
+
+# ── calibration and labels ──────────────────────────────────────────────────
+
+
+def test_save_calibration_writes_the_site_file(ai_project, docker, monkeypatch):
+    _serving(docker[1])
+    _fake_client(monkeypatch, lambda state: _cause("electrical", 0.99))
+    result = _run_in(
+        ai_project,
+        ["ai", "system1", "eval", "--no-gates", "--fit-calibration", "--save-calibration"],
+    )
+    assert result.exit_code == 0, result.output
+    site = json.loads((ai_project / ai.CALIBRATION_DIR / ai.CALIBRATION_FILE).read_text())
+    assert set(site) >= {"choice:6-10"} and all(0.5 <= t <= 5 for t in site.values())
+    assert envutil.load(ai_project / ".env")["SYSTEM1_CALIBRATION"] == "site.json"
+    assert "bump every set's" in result.output
+
+
+@pytest.mark.parametrize(
+    "args", [["--save-calibration"], ["incident-triage", "--fit-calibration", "--save-calibration"]]
+)
+def test_save_calibration_needs_every_set(ai_project, docker, args):
+    result = _run_in(ai_project, ["ai", "system1", "eval", *args])
+    assert result.exit_code == 1 and "over every set" in result.output
+
+
+def _events(tmp_path, rows):
+    path = tmp_path / "events.jsonl"
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    return path
+
+
+EVENTS = [
+    {"ts": "2026-09-01T08:00:00Z", "state": {"alert": "Smoke in cabinet 3"}, "subject": "cab-3"},
+    {"ts": "2026-09-02T09:30:00Z", "state": {"alert": "Status changed."}, "subject": "gw-01"},
+]
+
+
+def test_label_prints_without_writing(ai_project, docker, monkeypatch, tmp_path):
+    _serving(docker[1])
+    _fake_client(
+        monkeypatch,
+        lambda st: _cause("electrical", 0.99) if "Smoke" in st["alert"] else _cause("thermal", 0.2),
+    )
+    result = _run_in(
+        ai_project,
+        ["ai", "system1", "label", "incident-triage", "--input", str(_events(tmp_path, EVENTS))],
+    )
+    assert result.exit_code == 0, result.output
+    assert "electrical" in result.output and "(unlabelled)" in result.output
+    assert "1 labels; write them with --write" in result.output
+    assert docker[0] == []
+
+
+def test_label_write_sends_line_protocol_to_influxdb(iot_ai_project, monkeypatch, tmp_path):
+    calls = []
+
+    class Done:
+        returncode, stdout, stderr = 0, "", ""
+
+    monkeypatch.setattr(ai, "_compose", lambda cwd, *a, **kw: calls.append((cwd, a, kw)) or Done())
+    monkeypatch.setattr(ai, "_container_state", lambda name: ("running", "healthy"))
+    _fake_client(monkeypatch, lambda st: _cause("electrical", 0.99))
+    events = _events(tmp_path, EVENTS)
+    result = _run_in(
+        iot_ai_project,
+        ["ai", "system1", "label", "incident-triage", "--input", str(events), "--write"],
+    )
+    assert result.exit_code == 0, result.output
+    [(cwd, args, kw)] = calls
+    assert cwd == iot_ai_project / "iot"
+    assert args[:4] == ("exec", "-T", "influxdb", "sh") and args[-1] == "ai_events"
+    token = envutil.load(iot_ai_project / "iot" / ".env")["INFLUXDB_TOKEN"]
+    assert token not in " ".join(args)
+    lines = kw["input"].strip().splitlines()
+    assert len(lines) == 2 and lines[0].startswith(
+        "system1_label,caller=cli-label,choice=electrical"
+    )
+    assert "Wrote 2 labels to ai_events" in result.output
+
+
+def test_label_rejects_bad_input(ai_project, docker, tmp_path):
+    bad = tmp_path / "bad.jsonl"
+    bad.write_text('{"state": {"alert": "x"}}\n')
+    result = _run_in(ai_project, ["ai", "system1", "label", "incident-triage", "--input", str(bad)])
+    assert result.exit_code == 1 and "needs 'ts' and 'state'" in result.output

@@ -98,10 +98,11 @@ def rotate() -> None:
     if not confirmed:
         raise typer.Abort()
 
+    # Key by key, so the file keeps its comments and layout
     for _name, path, env in envs:
-        updates = {k: v for k, v in new_values.items() if k in env}
-        if updates:
-            envutil.write(path, {**env, **updates})
+        for key, value in new_values.items():
+            if key in env:
+                envutil.set_value(path, key, value)
 
     console.print("\n[green]✓[/green] Secrets rotated in [bold].env[/bold]")
 

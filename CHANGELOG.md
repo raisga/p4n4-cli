@@ -9,6 +9,8 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-14
+
 ### Added
 
 - `p4n4 ai system1`: System 1, fast typed decisions with laya, off by default.
@@ -27,6 +29,21 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `p4n4 ai system1 enable` and `p4n4 init` also generate `OPERATOR_INTAKE_TOKEN` and n8n's
   `p4n4 Operator Intake` credential, and give the iot layer the same `SYSTEM1_API_KEY` for
   Node-RED's `p4n4-system1` subflow; `p4n4 secret rotate` keeps both credentials in step.
+- `p4n4 ai system1 label <set> --input FILE [--write]` labels past events in batch and
+  writes the answered labels to `ai_events` for Grafana's annotations;
+  `eval --fit-calibration --save-calibration` writes the site calibration and sets
+  `SYSTEM1_CALIBRATION`. `init` and `enable` generate `SYSTEM1_ALERT_TOKEN` in both layers
+  and n8n's `p4n4 System 1 Alerts` credential, for Grafana's drift alerts.
+- `p4n4 ai system1 status` names the checkpoint's repository when `SYSTEM1_REPO` serves a
+  fine-tuned one instead of `convaiinnovations/laya`.
+
+### Fixed
+
+- `p4n4 secret rotate` changes only the rotated keys in each `.env`, and keeps its comments
+  and layout; it used to rewrite the file without them.
+- `p4n4 ai system1 enable` creates `config/system1/calibration` before the service mounts
+  it, so Docker doesn't create it as root and `eval --save-calibration` can write there;
+  when it can't, `eval` says so instead of failing with a traceback.
 
 ## [0.2.1] - 2026-10-12
 
@@ -225,7 +242,8 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - CI matrix across Python 3.11, 3.12, 3.13
 - PyPI publishing workflow via Trusted Publisher
 
-[Unreleased]: https://github.com/raisga/p4n4-cli/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/raisga/p4n4-cli/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/raisga/p4n4-cli/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/raisga/p4n4-cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/raisga/p4n4-cli/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/raisga/p4n4-cli/compare/v0.1.0...v0.1.1
