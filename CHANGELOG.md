@@ -9,6 +9,37 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The edge layer merged into the ai layer, and p4n4-edge became p4n4-extras. Requires
+p4n4-lib 0.4.0.
+
+### Added
+
+- `p4n4 migrate edge [--source-ai PATH] [--yes]`: moves a project's edge layer into the ai
+  layer (the runner's service, `runner/`, models and `.env` values; `ei-runner` added to
+  `COMPOSE_PROFILES`; a new ai layer scaffolded when the project has none) or, when it runs
+  other services, renames it to `extras` with the same volumes. What it replaces stays in
+  `edge.pre-migrate/`. It refuses while the edge layer runs.
+- `--layer extras` and `--source-extras`: the optional extras layer (p4n4-extras), which
+  starts with nothing enabled and is never part of `--layer all`.
+- `p4n4 init --ei-runner/--no-ei-runner`: run the ai layer's edge inference runner. On with
+  `--layer all`, which ran it as the edge layer before; the wizard asks.
+- `p4n4 init` writes a `.gitignore` at the project root: every layer's `.env`, Mosquitto's
+  `passwd`, ACL and certificates, Node-RED's credentials, model files, p4n4-api's data and
+  `edge.pre-migrate/`. Projects scaffolded before had none, so their `.env` files (generated
+  secrets) could be committed by accident.
+
+### Changed
+
+- `p4n4 up` skips a stack with no service enabled instead of failing with Compose's "no
+  service selected", with or without `--emu`.
+- Projects with an `edge` layer keep working; every command prints a reminder to run
+  `p4n4 migrate edge`.
+
+### Removed
+
+- `--layer edge` and `--source-edge`. `--layer edge` now explains that the runner is the ai
+  layer's `ei-runner` profile.
+
 ## [0.3.0] - 2026-10-14
 
 ### Added

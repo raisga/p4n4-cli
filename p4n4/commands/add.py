@@ -11,7 +11,7 @@ console = Console()
 
 
 def cmd(
-    component: Annotated[str, typer.Argument(help="Layer or service to add (e.g. ai, edge).")],
+    component: Annotated[str, typer.Argument(help="Layer or service to add (e.g. ai, extras).")],
 ) -> None:
     """Add a layer or service to the current project."""
     console.print(f"[yellow]p4n4 add[/yellow]: not yet implemented (component: {component})")

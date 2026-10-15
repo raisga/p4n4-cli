@@ -8,7 +8,19 @@ import typer
 from rich.console import Console
 
 from p4n4 import __version__
-from p4n4.commands import add, ai, ei, init, lifecycle, remove, secret, template, upgrade, validate
+from p4n4.commands import (
+    add,
+    ai,
+    ei,
+    init,
+    lifecycle,
+    migrate,
+    remove,
+    secret,
+    template,
+    upgrade,
+    validate,
+)
 
 # Windows encodes redirected output as cp1252, which can't print ✓/✗; the
 # resulting UnicodeEncodeError fails commands that already succeeded.
@@ -41,6 +53,7 @@ app.command("status")(lifecycle.status)
 app.command("logs")(lifecycle.logs)
 app.command("validate")(validate.cmd)
 app.command("upgrade")(upgrade.cmd)
+app.command("migrate")(migrate.cmd)
 
 
 def _version_callback(value: bool) -> None:

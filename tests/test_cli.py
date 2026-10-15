@@ -54,10 +54,10 @@ def _stack_source(name: str) -> str:
     return str(candidates[0])
 
 
-# Local checkouts used as --source-iot / --source-ai / --source-edge (avoids network calls)
+# Local checkouts used as --source-iot / --source-ai / --source-extras (avoids network calls)
 _IOT_SOURCE = _stack_source("iot")
 _AI_SOURCE = _stack_source("ai")
-_EDGE_SOURCE = _stack_source("edge")
+_EXTRAS_SOURCE = _stack_source("extras")
 _DASHBOARD_SOURCE = _stack_source("dashboard")
 
 
@@ -130,8 +130,8 @@ def all_project(tmp_path):
             _IOT_SOURCE,
             "--source-ai",
             _AI_SOURCE,
-            "--source-edge",
-            _EDGE_SOURCE,
+            "--source-extras",
+            _EXTRAS_SOURCE,
             "--source-dashboard",
             _DASHBOARD_SOURCE,
         ],
@@ -189,6 +189,7 @@ def test_init_iot_creates_expected_files(iot_project):
         "config/node-red/flows/flows.json",
         "config/grafana/provisioning/datasources/datasources.yml",
         "scripts/init-buckets.sh",
+        ".gitignore",
     ]
     for rel in expected:
         assert (iot_project / rel).exists(), f"Missing: {rel}"
@@ -231,6 +232,23 @@ def test_init_iot_generates_node_red_password(iot_project):
 def test_init_iot_scripts_are_executable(iot_project):
     for script in (iot_project / "scripts").glob("*.sh"):
         assert script.stat().st_mode & stat.S_IXUSR, f"Not executable: {script.name}"
+
+
+def test_init_writes_a_gitignore_for_every_layer(multi_project):
+    gitignore = (multi_project / ".gitignore").read_text()
+    assert ".env\n" in gitignore
+    if shutil.which("git") is None:
+        pytest.skip("git not installed")
+    subprocess.run(["git", "init", "-q", str(multi_project)], check=True)
+    secrets = ["iot/.env", "ai/.env"]
+    committed = ["iot/.env.example", "ai/.env.example", ".p4n4.json", "ai/docker-compose.yml"]
+    result = subprocess.run(
+        ["git", "-C", str(multi_project), "check-ignore", "--no-index", *secrets, *committed],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert set(result.stdout.split()) == set(secrets)
 
 
 def test_init_fails_if_directory_exists():
@@ -668,6 +686,7 @@ def test_up_stops_before_starting_when_names_are_taken(tmp_path, monkeypatch):
         ],
     }
     started = []
+    monkeypatch.setattr(compose, "enabled_services", lambda cwd: ["svc"])
     monkeypatch.setattr(
         compose, "name_conflicts", lambda *dirs: [c for d in dirs for c in taken[d.name]]
     )
@@ -697,12 +716,45 @@ def test_up_starts_when_no_names_are_taken(tmp_path, monkeypatch):
         json.dumps({"schema_version": 1, "project": "demo", "layers": ["iot"]})
     )
     started = []
+    monkeypatch.setattr(compose, "enabled_services", lambda cwd: ["svc"])
     monkeypatch.setattr(compose, "name_conflicts", lambda *dirs: [])
     monkeypatch.setattr(lifecycle.compose, "up", lambda cwd, **kw: started.append(cwd) or 0)
 
     result = _run_in(tmp_path, ["up"], catch_exceptions=False)
     assert result.exit_code == 0, result.output
     assert started == [tmp_path]
+
+
+def test_up_skips_a_stack_with_nothing_enabled(tmp_path, monkeypatch):
+    from p4n4_lib import compose
+
+    from p4n4.commands import lifecycle
+
+    for layer in ("iot", "extras"):
+        (tmp_path / layer).mkdir()
+        (tmp_path / layer / "docker-compose.yml").write_text("services: {}\n")
+    (tmp_path / ".p4n4.json").write_text(
+        json.dumps({"schema_version": 1, "project": "demo", "layers": ["iot", "extras"]})
+    )
+    started = []
+    # The extras layer starts with COMPOSE_PROFILES empty: Compose would fail on it
+    monkeypatch.setattr(
+        compose, "enabled_services", lambda cwd: [] if cwd.name == "extras" else ["mqtt"]
+    )
+    monkeypatch.setattr(compose, "name_conflicts", lambda *dirs: [])
+    monkeypatch.setattr(lifecycle.compose, "ensure_network", lambda name, subnet: False)
+    monkeypatch.setattr(lifecycle.compose, "up", lambda cwd, **kw: started.append(cwd.name) or 0)
+
+    result = _run_in(tmp_path, ["up"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert started == ["iot"]
+    assert "Skipping extras" in " ".join(result.output.split())
+
+    started.clear()
+    result = _run_in(tmp_path, ["up", "extras"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert started == []
+    assert "Nothing to start" in result.output
 
 
 def test_up_creates_the_network_for_stacks_that_join_it(tmp_path, monkeypatch):
@@ -717,6 +769,7 @@ def test_up_creates_the_network_for_stacks_that_join_it(tmp_path, monkeypatch):
         json.dumps({"schema_version": 1, "project": "demo", "layers": ["iot", "ai"]})
     )
     events = []
+    monkeypatch.setattr(compose, "enabled_services", lambda cwd: ["svc"])
     monkeypatch.setattr(compose, "name_conflicts", lambda *dirs: [])
     monkeypatch.setattr(
         lifecycle.compose, "ensure_network", lambda name, subnet: events.append(name) or True
@@ -747,6 +800,7 @@ def _emu_project(tmp_path, monkeypatch, layers=("iot", "ai")):
     (tmp_path / ".p4n4.json").write_text(
         json.dumps({"schema_version": 1, "project": "demo", "layers": list(layers)})
     )
+    monkeypatch.setattr(compose, "enabled_services", lambda cwd: ["svc"])
     monkeypatch.setattr(compose, "name_conflicts", lambda *dirs: [])
     monkeypatch.setattr(lifecycle.shutil, "which", lambda name: f"/bin/{name}")
     calls = []
@@ -913,66 +967,263 @@ def test_down_all_rejects_a_stack_name(tmp_path):
     assert "--all" in result.output
 
 
-# ── p4n4 init: edge ──────────────────────────────────────────────────────────
+# ── p4n4 init: all, extras and the inference runner ─────────────────────────
 
 
-def test_init_all_scaffolds_edge(all_project):
+def test_init_all_scaffolds_the_inference_runner_in_ai(all_project):
     for rel in (
-        "edge/docker-compose.yml",
-        "edge/.env",
-        "edge/runner/Dockerfile",
-        "edge/runner/runner.py",
-        "edge/edge-impulse/models",
-        "edge/onnx/models",
+        "ai/runner/Dockerfile",
+        "ai/runner/runner.py",
+        "ai/edge-impulse/models",
+        "ai/onnx/models",
     ):
         assert (all_project / rel).exists(), f"Missing: {rel}"
-    assert not list((all_project / "edge").rglob("__pycache__"))
+    assert not list((all_project / "ai").rglob("__pycache__"))
+    assert not (all_project / "edge").exists()
+    # --layer all ran the edge layer's runner before it merged into ai: it still does
+    env = envutil.load(all_project / "ai" / ".env")
+    assert env["COMPOSE_PROFILES"] == "ollama,ei-runner"
+    assert env["INFLUXDB_BUCKET_AI_EVENTS"] == "ai_events"
 
 
-def test_init_all_manifest_lists_every_layer(all_project):
+def test_init_all_manifest_lists_every_core_layer(all_project):
     data = json.loads((all_project / ".p4n4.json").read_text())
-    assert data["layers"] == ["iot", "ai", "edge", "dashboard"]
+    # extras is opt-in: never part of --layer all
+    assert data["layers"] == ["iot", "ai", "dashboard"]
 
 
-def test_init_all_edge_shares_influxdb_values(all_project):
+def test_init_all_runner_shares_influxdb_values(all_project):
     iot_env = envutil.load(all_project / "iot" / ".env")
-    edge_env = envutil.load(all_project / "edge" / ".env")
-    assert iot_env["INFLUXDB_TOKEN"] == edge_env["INFLUXDB_TOKEN"]
-    assert iot_env["INFLUXDB_ORG"] == edge_env["INFLUXDB_ORG"]
-    assert iot_env["TZ"] == edge_env["TZ"]
+    ai_env = envutil.load(all_project / "ai" / ".env")
+    assert iot_env["INFLUXDB_TOKEN"] == ai_env["INFLUXDB_TOKEN"]
+    assert iot_env["INFLUXDB_ORG"] == ai_env["INFLUXDB_ORG"]
+    assert iot_env["TZ"] == ai_env["TZ"]
 
 
 def test_validate_passes_on_all_layer_project(all_project):
     result = _run_in(all_project, ["validate"], catch_exceptions=False)
     assert result.exit_code == 0, result.output
-    assert "edge/runner/runner.py" in result.output
+    assert "ai/runner/runner.py" in result.output
 
 
-def test_validate_fails_on_missing_edge_file(all_project):
-    (all_project / "edge" / "runner" / "runner.py").unlink()
+def test_validate_fails_on_missing_runner_file(all_project):
+    (all_project / "ai" / "runner" / "runner.py").unlink()
     result = _run_in(all_project, ["validate"])
     assert result.exit_code != 0
-    assert "edge/runner/runner.py" in result.output
+    assert "ai/runner/runner.py" in result.output
 
 
-def test_secret_rotate_keeps_edge_token_in_sync(all_project):
-    result = _run_in(all_project, ["secret", "rotate"], input="y\n", catch_exceptions=False)
+def test_validate_ignores_runner_files_while_the_runner_is_off(all_project):
+    envutil.set_value(all_project / "ai" / ".env", "COMPOSE_PROFILES", "ollama")
+    (all_project / "ai" / "runner" / "runner.py").unlink()
+    result = _run_in(all_project, ["validate"], catch_exceptions=False)
     assert result.exit_code == 0, result.output
-    iot_env = envutil.load(all_project / "iot" / ".env")
-    edge_env = envutil.load(all_project / "edge" / ".env")
-    assert iot_env["INFLUXDB_TOKEN"] == edge_env["INFLUXDB_TOKEN"]
 
 
-def test_init_edge_only_validates(tmp_path):
+def test_init_ai_runs_the_runner_only_when_asked(tmp_path):
     result = _run_in(
         tmp_path,
-        ["init", "proj-edge", "--layer", "edge", "--no-interactive", "--source-edge", _EDGE_SOURCE],
+        ["init", "plain", "--layer", "ai", "--no-interactive", "--source-ai", _AI_SOURCE],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
-    assert (tmp_path / "proj-edge" / "runner" / "runner.py").exists()
-    result = _run_in(tmp_path / "proj-edge", ["validate"], catch_exceptions=False)
+    assert envutil.load(tmp_path / "plain" / ".env")["COMPOSE_PROFILES"] == "ollama"
+    # The runner's files are there for when it's enabled
+    assert (tmp_path / "plain" / "runner" / "runner.py").exists()
+
+    result = _run_in(
+        tmp_path,
+        ["init", "inf", "--layer", "ai", "--ei-runner", "--no-interactive"]
+        + ["--source-ai", _AI_SOURCE],
+        catch_exceptions=False,
+    )
     assert result.exit_code == 0, result.output
+    assert envutil.load(tmp_path / "inf" / ".env")["COMPOSE_PROFILES"] == "ollama,ei-runner"
+    result = _run_in(tmp_path / "inf", ["validate"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+
+
+def test_init_ei_runner_needs_the_ai_layer(tmp_path):
+    result = _run_in(tmp_path, ["init", "p", "--layer", "iot", "--ei-runner", "--no-interactive"])
+    assert result.exit_code == 1
+    assert "add ai to --layer" in " ".join(result.output.split())
+
+
+def test_init_edge_layer_points_to_ai(tmp_path):
+    result = _run_in(tmp_path, ["init", "p", "--layer", "iot,edge", "--no-interactive"])
+    assert result.exit_code == 1
+    assert "merged into ai" in " ".join(result.output.split())
+    assert not (tmp_path / "p").exists()
+
+
+def test_init_all_plus_extras(tmp_path):
+    result = _run_in(
+        tmp_path,
+        ["init", "pa", "--layer", "all,extras", "--no-interactive"]
+        + ["--source-iot", _IOT_SOURCE, "--source-ai", _AI_SOURCE]
+        + ["--source-extras", _EXTRAS_SOURCE, "--source-dashboard", _DASHBOARD_SOURCE],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    layers = json.loads((tmp_path / "pa" / ".p4n4.json").read_text())["layers"]
+    assert layers == ["iot", "ai", "dashboard", "extras"]
+    assert "ei-runner" in envutil.load(tmp_path / "pa" / "ai" / ".env")["COMPOSE_PROFILES"]
+
+
+def test_init_extras_is_opt_in_and_starts_empty(tmp_path):
+    result = _run_in(
+        tmp_path,
+        ["init", "px", "--layer", "iot,extras", "--no-interactive"]
+        + ["--source-iot", _IOT_SOURCE, "--source-extras", _EXTRAS_SOURCE],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    project = tmp_path / "px"
+    assert json.loads((project / ".p4n4.json").read_text())["layers"] == ["iot", "extras"]
+    for rel in ("extras/docker-compose.yml", "extras/.env", "extras/_template/docker-compose.yml"):
+        assert (project / rel).exists(), f"Missing: {rel}"
+    env = envutil.load(project / "extras" / ".env")
+    assert env["COMPOSE_PROFILES"] == ""
+    assert env["COMPOSE_PROJECT_NAME"] == "px-extras"
+    result = _run_in(project, ["validate"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+
+
+def test_secret_rotate_keeps_the_runner_token_in_sync(all_project):
+    result = _run_in(all_project, ["secret", "rotate"], input="y\n", catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    iot_env = envutil.load(all_project / "iot" / ".env")
+    ai_env = envutil.load(all_project / "ai" / ".env")
+    assert iot_env["INFLUXDB_TOKEN"] == ai_env["INFLUXDB_TOKEN"]
+
+
+# ── p4n4 migrate edge ────────────────────────────────────────────────────────
+
+
+_BANNER = "  # " + "=" * 84 + "\n"
+
+
+def _legacy_edge_project(tmp_path, layers=("iot", "ai", "edge")):
+    """A project from before the edge layer merged into ai: its ai layer without the
+    runner, and its edge layer as p4n4-edge scaffolded it (the same service and runner
+    p4n4-ai has now)."""
+    project = tmp_path / "old"
+    for name in layers:
+        (project / name).mkdir(parents=True)
+    ai_src = Path(_AI_SOURCE)
+    compose = (ai_src / "docker-compose.yml").read_text()
+    runner_start = compose.index(_BANNER + "  # EDGE INFERENCE")
+    runner_end = compose.index("# " + "=" * 84 + "\n# NETWORKS")
+    runner_service = compose[compose.index("  ei-runner:\n", runner_start) : runner_end]
+    if "ai" in layers:
+        before = compose[:runner_start] + compose[runner_end:].replace("  ei-runner-data:\n", "")
+        (project / "ai" / "docker-compose.yml").write_text(before)
+        envutil.write(
+            project / "ai" / ".env",
+            {"COMPOSE_PROFILES": "ollama", "COMPOSE_PROJECT_NAME": "old-ai", "TZ": "UTC"},
+        )
+    edge = project / "edge"
+    (edge / "docker-compose.yml").write_text(
+        "services:\n"
+        + runner_service
+        + "networks:\n  p4n4-net:\n    external: true\n    name: p4n4-net\n"
+        + "volumes:\n  ei-runner-data:\n"
+    )
+    envutil.write(
+        edge / ".env",
+        {
+            "COMPOSE_PROFILES": "ei-runner",
+            "COMPOSE_PROJECT_NAME": "old-edge",
+            "MODEL_BACKEND": "auto",
+            "MQTT_HOST": "p4n4-mqtt",
+            "MQTT_PORT": "1883",
+            "INFLUXDB_TOKEN": "tok",
+            "INFLUXDB_ORG": "ming",
+            "INFLUXDB_BUCKET_AI_EVENTS": "ai_events",
+            "TZ": "UTC",
+        },
+    )
+    shutil.copytree(
+        ai_src / "runner", edge / "runner", ignore=shutil.ignore_patterns("__pycache__")
+    )
+    (edge / "edge-impulse" / "models").mkdir(parents=True)
+    (edge / "edge-impulse" / "models" / "model.eim").write_text("eim")
+    (edge / "onnx" / "models").mkdir(parents=True)
+    (project / ".p4n4.json").write_text(
+        json.dumps({"schema_version": 1, "project": "old", "layers": list(layers)})
+    )
+    return project
+
+
+def _no_docker(monkeypatch):
+    from p4n4_lib import compose
+
+    def ps(cwd):
+        raise compose.DockerError("no docker")
+
+    monkeypatch.setattr(compose, "ps", ps)
+
+
+def test_commands_warn_about_a_legacy_edge_layer(tmp_path):
+    project = _legacy_edge_project(tmp_path)
+    result = _run_in(project, ["validate"])
+    assert "p4n4 migrate edge" in " ".join(result.output.split())
+
+
+def test_migrate_edge_moves_the_runner_into_ai(tmp_path, monkeypatch):
+    _no_docker(monkeypatch)
+    project = _legacy_edge_project(tmp_path)
+
+    result = _run_in(project, ["migrate", "edge", "--yes"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads((project / ".p4n4.json").read_text())["layers"] == ["iot", "ai"]
+    env = envutil.load(project / "ai" / ".env")
+    assert env["COMPOSE_PROFILES"] == "ollama,ei-runner"
+    assert env["COMPOSE_PROJECT_NAME"] == "old-ai"
+    assert (project / "ai" / "edge-impulse" / "models" / "model.eim").exists()
+    assert (project / "edge.pre-migrate" / "docker-compose.yml").exists()
+    output = " ".join(result.output.split())
+    assert "edge → ai" in output
+    assert "p4n4 up ai" in output
+    # Nothing left to warn about
+    result = _run_in(project, ["migrate", "edge", "--yes"], catch_exceptions=False)
+    assert "Nothing to migrate" in result.output
+
+
+def test_migrate_edge_into_a_new_ai_layer(tmp_path, monkeypatch):
+    _no_docker(monkeypatch)
+    project = _legacy_edge_project(tmp_path, layers=("iot", "edge"))
+
+    result = _run_in(
+        project, ["migrate", "edge", "--yes", "--source-ai", _AI_SOURCE], catch_exceptions=False
+    )
+
+    assert result.exit_code == 0, result.output
+    env = envutil.load(project / "ai" / ".env")
+    assert env["COMPOSE_PROFILES"] == "ei-runner"
+    assert env["INFLUXDB_TOKEN"] == "tok"
+    # Generated, as p4n4 init would
+    assert env["LETTA_SERVER_PASSWORD"] not in ("", "lettapassword")
+
+
+def test_migrate_edge_refuses_while_it_runs(tmp_path, monkeypatch):
+    from p4n4_lib import compose
+
+    monkeypatch.setattr(compose, "ps", lambda cwd: [{"Service": "ei-runner", "State": "running"}])
+    project = _legacy_edge_project(tmp_path)
+
+    result = _run_in(project, ["migrate", "edge", "--yes"])
+
+    assert result.exit_code == 1
+    assert "p4n4 down edge" in result.output
+    assert (project / "edge" / "docker-compose.yml").exists()
+
+
+def test_migrate_rejects_other_layers(tmp_path):
+    result = _run_in(tmp_path, ["migrate", "iot"])
+    assert result.exit_code == 1
+    assert "not a legacy layer" in result.output
 
 
 def test_init_unknown_layer_errors(tmp_path):

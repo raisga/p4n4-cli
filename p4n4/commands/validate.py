@@ -7,7 +7,7 @@ from p4n4_lib import manifest as mf
 from p4n4_lib.validate import validate_project
 from rich.console import Console
 
-from p4n4.project import require_manifest
+from p4n4.project import require_manifest, warn_legacy_layers
 
 console = Console()
 
@@ -24,6 +24,7 @@ def cmd() -> None:
         console.print(f"[red]✗[/red] .p4n4.json is not valid JSON: {exc}")
         raise typer.Exit(1) from exc
 
+    warn_legacy_layers(data.get("layers", []))
     passed, errors = validate_project(project_dir, data)
 
     for label in passed:

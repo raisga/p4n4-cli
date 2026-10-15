@@ -101,9 +101,26 @@ def _emu_up(dirs: list[tuple[str, Path]], profile: str, build: bool, pull: bool)
     return subprocess.run(cmd, cwd=dirs[0][1], check=False).returncode
 
 
+def _with_services(dirs: list[tuple[str, Path]]) -> list[tuple[str, Path]]:
+    """The stacks with a service to start. Compose fails on the others ("no service
+    selected"): an extras layer starts with nothing enabled."""
+    kept = []
+    for name, cwd in dirs:
+        with _compose_errors():
+            enabled = compose.enabled_services(cwd)
+        if enabled == []:
+            console.print(
+                f"[dim]Skipping [bold]{name}[/bold]: no services enabled "
+                f"(COMPOSE_PROFILES in {cwd / envutil.ENV_FILE}).[/dim]"
+            )
+        else:
+            kept.append((name, cwd))
+    return kept
+
+
 def up(
     stack: Annotated[
-        str | None, typer.Argument(help="Stack to start: iot, ai, edge, dashboard.")
+        str | None, typer.Argument(help="Stack to start: iot, ai, extras, dashboard.")
     ] = None,
     build: Annotated[bool, typer.Option("--build", help="Rebuild images before starting.")] = False,
     pull: Annotated[
@@ -126,7 +143,10 @@ def up(
     if emu and no_detach:
         console.print("[red]Error:[/red] --emu starts the stacks detached; drop --no-detach.")
         raise typer.Exit(1)
-    dirs = require_compose_dirs(stack)
+    dirs = _with_services(require_compose_dirs(stack))
+    if not dirs:
+        console.print("[yellow]Nothing to start: no stack has a service enabled.[/yellow]")
+        return
     _check_name_conflicts(dirs)
     if emu:
         rc = _emu_up(dirs, emu, build, pull)
@@ -192,7 +212,7 @@ def _down_all(volumes: bool) -> None:
 
 def down(
     stack: Annotated[
-        str | None, typer.Argument(help="Stack to stop: iot, ai, edge, dashboard.")
+        str | None, typer.Argument(help="Stack to stop: iot, ai, extras, dashboard.")
     ] = None,
     volumes: Annotated[
         bool, typer.Option("--volumes", help="Also remove persistent data volumes.")
@@ -306,7 +326,7 @@ def status() -> None:
 def logs(
     service: Annotated[str | None, typer.Argument(help="Service name to stream.")] = None,
     stack: Annotated[
-        str | None, typer.Option("--stack", help="Stack to read logs from: iot, ai, edge.")
+        str | None, typer.Option("--stack", help="Stack to read logs from: iot, ai, extras.")
     ] = None,
     tail: Annotated[int | None, typer.Option("--tail", help="Lines from end of log.")] = 100,
     no_follow: Annotated[bool, typer.Option("--no-follow", help="Print once and exit.")] = False,

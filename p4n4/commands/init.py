@@ -11,7 +11,7 @@ import typer
 from p4n4_lib import layout, scaffold
 from p4n4_lib import manifest as mf
 from p4n4_lib import secrets as secretutil
-from p4n4_lib.layers import LAYERS
+from p4n4_lib.layers import DEFAULT_LAYERS, LAYERS, LEGACY_LAYERS, RUNNER_SERVICE
 from rich.console import Console
 from rich.panel import Panel
 
@@ -132,7 +132,11 @@ def cmd(
     project_name: Annotated[str, typer.Argument(help="Name of the new project directory.")],
     layer: Annotated[
         str,
-        typer.Option("--layer", help="Layer(s) to enable: iot, ai, edge, dashboard, all."),
+        typer.Option(
+            "--layer",
+            help="Layer(s) to enable: iot, ai, extras, dashboard, or all (every layer but "
+            "the optional extras: all,extras adds it).",
+        ),
     ] = "iot",
     no_interactive: Annotated[
         bool, typer.Option("--no-interactive", help="Skip wizard and use defaults.")
@@ -151,11 +155,19 @@ def cmd(
             help="Local path to a p4n4-ai checkout (skips git clone; useful offline).",
         ),
     ] = None,
-    edge_source: Annotated[
+    extras_source: Annotated[
         str | None,
         typer.Option(
-            "--source-edge",
-            help="Local path to a p4n4-edge checkout (skips git clone; useful offline).",
+            "--source-extras",
+            help="Local path to a p4n4-extras checkout (skips git clone; useful offline).",
+        ),
+    ] = None,
+    ei_runner: Annotated[
+        bool | None,
+        typer.Option(
+            "--ei-runner/--no-ei-runner",
+            help="Run the ai layer's edge inference runner (Edge Impulse or ONNX model; "
+            "mock results without one). Default: on with --layer all, else off.",
         ),
     ] = None,
     dashboard_source: Annotated[
@@ -227,8 +239,23 @@ def cmd(
         console.print(f"[red]Error:[/red] Directory '[bold]{project_name}[/bold]' already exists.")
         raise typer.Exit(1)
 
-    # "all" follows the registry, so new layers (the dashboard) are included
-    layers = list(LAYERS) if layer == "all" else [lyr.strip() for lyr in layer.split(",")]
+    # "all" follows the registry, so new layers (the dashboard) are included; opt-in
+    # ones (extras) only when named, e.g. --layer all,extras
+    requested = [lyr.strip() for lyr in layer.split(",")]
+    layers = list(
+        dict.fromkeys(
+            name for lyr in requested for name in (DEFAULT_LAYERS if lyr == "all" else [lyr])
+        )
+    )
+    legacy = [lyr for lyr in layers if lyr in LEGACY_LAYERS]
+    if legacy:
+        console.print(
+            f"[red]Error:[/red] The [bold]{legacy[0]}[/bold] layer merged into "
+            f"[bold]{LEGACY_LAYERS[legacy[0]]}[/bold]: use --layer "
+            f"{LEGACY_LAYERS[legacy[0]]} --ei-runner (the inference runner is its "
+            f"{RUNNER_SERVICE} profile)."
+        )
+        raise typer.Exit(1)
     unknown = [lyr for lyr in layers if lyr not in LAYERS]
     if unknown or not layers:
         console.print(
@@ -236,6 +263,16 @@ def cmd(
             f"Choose from {', '.join(LAYERS)} or all."
         )
         raise typer.Exit(1)
+
+    if ei_runner and "ai" not in layers:
+        console.print(
+            "[red]Error:[/red] [bold]--ei-runner[/bold] is a service of the ai layer; "
+            "add [bold]ai[/bold] to --layer."
+        )
+        raise typer.Exit(1)
+    # The runner was the edge layer, which --layer all included
+    if ei_runner is None:
+        ei_runner = "all" in requested
 
     if mqtt_remote and "iot" not in layers:
         console.print(
@@ -326,6 +363,13 @@ def cmd(
                 min_length=32,
             )
             n8n_host = _ask("n8n hostname (for webhooks)", "localhost")
+            ei_runner = bool(
+                questionary.confirm(
+                    "Run the edge inference runner (an Edge Impulse or ONNX model on every "
+                    "sensor sample; simulated results until you add one)?",
+                    default=ei_runner,
+                ).unsafe_ask()
+            )
         else:
             letta_password = secretutil.token(12)
             n8n_password = secretutil.token(12)
@@ -365,6 +409,7 @@ def cmd(
     }
 
     ai_env_values: dict[str, str] = {
+        **({"COMPOSE_PROFILES": f"ollama,{RUNNER_SERVICE}"} if ei_runner else {}),
         # n8n's schedules and date expressions (it defaults to America/New_York)
         "TZ": tz,
         "LETTA_SERVER_PASSWORD": letta_password,
@@ -380,15 +425,12 @@ def cmd(
         "INFLUXDB_TOKEN": influx_token,
         "INFLUXDB_ORG": org,
         "INFLUXDB_BUCKET": "raw_telemetry",
-    }
-
-    edge_env_values: dict[str, str] = {
-        "TZ": tz,
-        # Shared InfluxDB values (must match p4n4-iot when used alongside it)
-        "INFLUXDB_TOKEN": influx_token,
-        "INFLUXDB_ORG": org,
+        # Where the inference runner writes its results
         "INFLUXDB_BUCKET_AI_EVENTS": "ai_events",
     }
+
+    # Nothing in extras starts by default; it has no secrets of its own
+    extras_env_values: dict[str, str] = {"TZ": tz}
 
     # ── Create project directory and scaffold ─────────────────────────────────
     project_dir.mkdir(parents=True)
@@ -404,14 +446,16 @@ def cmd(
         if "ai" in layers:
             _scaffold(project_dir, layers, "ai", ai_env_values, ai_source)
 
-        if "edge" in layers:
-            _scaffold(project_dir, layers, "edge", edge_env_values, edge_source)
+        if "extras" in layers:
+            _scaffold(project_dir, layers, "extras", extras_env_values, extras_source)
 
         # The dashboard has no secrets yet: its .env is the repo's .env.example
         if "dashboard" in layers:
             _scaffold(project_dir, layers, "dashboard", {}, dashboard_source)
 
         mf.save(project_dir / mf.MANIFEST_FILE, mf.create(project_name, layers))
+        # Every layer's .env holds generated secrets: keep them out of git
+        scaffold.write_gitignore(project_dir)
 
     except Exception as exc:
         shutil.rmtree(project_dir, ignore_errors=True)
@@ -434,10 +478,18 @@ def cmd(
 
     if "ai" in layers:
         ai_env = (layout.layer_dir(project_dir, layers, "ai") / ".env").relative_to(project_dir)
+        started = "Ollama and the inference runner start" if ei_runner else "only Ollama starts"
         console.print(
-            "\n  [dim]GenAI: only Ollama starts by default. To run Letta or n8n, add them to[/dim] "
+            f"\n  [dim]AI: {started} by default. To run Letta, n8n or the inference runner, "
+            "add them to[/dim] "
             f"COMPOSE_PROFILES [dim]in {ai_env.as_posix()} (e.g.[/dim] "
-            "COMPOSE_PROFILES=ollama,letta,n8n[dim]).[/dim]"
+            f"COMPOSE_PROFILES=ollama,letta,n8n,{RUNNER_SERVICE}[dim]).[/dim]"
+        )
+    if "extras" in layers:
+        extras_dir = layout.layer_dir(project_dir, layers, "extras").relative_to(project_dir)
+        console.print(
+            "\n  [dim]Extras: nothing starts until you add a service (see "
+            f"{(extras_dir / '_template').as_posix()}/) and list it in COMPOSE_PROFILES.[/dim]"
         )
 
     console.print(f"\n[bold]Next steps:[/bold]\n  cd {project_name}\n  p4n4 up\n")

@@ -7,9 +7,21 @@ from pathlib import Path
 import typer
 from p4n4_lib import layout
 from p4n4_lib import manifest as mf
+from p4n4_lib.layers import LEGACY_LAYERS, RUNNER_SERVICE
 from rich.console import Console
 
 console = Console()
+
+
+def warn_legacy_layers(layers: list[str]) -> None:
+    """Point a project still running a legacy layer at `p4n4 migrate`."""
+    for name in layout.legacy(layers):
+        console.print(
+            f"[yellow]Warning:[/yellow] the [bold]{name}[/bold] layer merged into "
+            f"[bold]{LEGACY_LAYERS[name]}[/bold] (its {RUNNER_SERVICE} profile). It keeps "
+            f"working for now; move it with [bold]p4n4 migrate {name}[/bold].",
+            soft_wrap=True,
+        )
 
 
 def require_manifest() -> Path:
@@ -32,6 +44,7 @@ def require_compose_dirs(stack: str | None = None) -> list[tuple[str, Path]]:
     """
     manifest_path = require_manifest()
     data = mf.load(manifest_path)
+    warn_legacy_layers(data.get("layers", []))
     dirs = layout.compose_dirs(manifest_path.parent, data.get("layers", []))
 
     if stack:

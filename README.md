@@ -55,8 +55,8 @@ P4N4 is a unified developer platform for IoT and Edge AI. It combines the **MING
 |------------|-------------|
 | **[p4n4](https://github.com/raisga/p4n4)** | Umbrella repo — architecture, ADRs, cross-cutting docs |
 | [p4n4-iot](https://github.com/raisga/p4n4-iot) | IoT stack: Mosquitto · InfluxDB · Node-RED · Grafana |
-| [p4n4-ai](https://github.com/raisga/p4n4-ai) | GenAI stack: Ollama · Letta · n8n |
-| [p4n4-edge](https://github.com/raisga/p4n4-edge) | Edge Impulse inference stack |
+| [p4n4-ai](https://github.com/raisga/p4n4-ai) | AI stack: Ollama · Letta · n8n · System 1 · Edge Impulse / ONNX inference runner |
+| [p4n4-extras](https://github.com/raisga/p4n4-extras) | Optional services outside the core (formerly p4n4-edge) |
 | [p4n4-api](https://github.com/raisga/p4n4-api) | Python (FastAPI) REST API gateway (port 8000) |
 | [p4n4-lib](https://github.com/raisga/p4n4-lib) | Shared Python library used by this CLI and p4n4-api (`pip install p4n4-lib`) |
 | [p4n4-dashboard](https://github.com/raisga/p4n4-dashboard) | Dashboard: web service (port 8088) + desktop/mobile apps |
@@ -176,15 +176,18 @@ p4n4 up
 p4n4 init my-full-project --layer all
 cd my-full-project
 p4n4 up
-p4n4 up --ai
 ```
 
-**No internet access?** Point `--source-iot` / `--source-ai` / `--source-edge` at local checkouts:
+`all` is every core layer (iot, ai, dashboard) with the inference runner on; add the optional extras layer by name: `--layer all,extras`.
+
+**Edge inference only** (an Edge Impulse or ONNX model on the sensor data, no LLM): `p4n4 init my-edge-project --layer iot,ai --ei-runner`, then `COMPOSE_PROFILES=ei-runner` in `ai/.env`.
+
+**No internet access?** Point `--source-iot` / `--source-ai` / `--source-extras` at local checkouts:
 
 ```bash
 p4n4 init my-project --source-iot ../p4n4-iot
 p4n4 init my-ai-project --layer ai --source-ai ../p4n4-ai
-p4n4 init my-edge-project --layer edge --source-edge ../p4n4-edge
+p4n4 init my-project --layer iot,extras --source-iot ../p4n4-iot --source-extras ../p4n4-extras
 ```
 
 Once the IoT stack is up:
@@ -214,6 +217,7 @@ After `p4n4 init`, the project directory contains files sourced from the relevan
 ```
 my-project/
 ├── .p4n4.json                       # Manifest (project name, active layers, schema version)
+├── .gitignore                       # Keeps .env, generated credentials and models out of git
 ├── .env                             # Credentials and config (auto-generated secrets)
 ├── docker-compose.yml               # Stack orchestration (sourced from p4n4-iot)
 ├── config/
@@ -243,6 +247,7 @@ my-project/
 ```
 my-ai-project/
 ├── .p4n4.json                       # Manifest
+├── .gitignore                       # Keeps .env, generated credentials and models out of git
 ├── .env                             # Credentials and config (auto-generated secrets)
 ├── docker-compose.yml               # Stack orchestration (sourced from p4n4-ai)
 ├── config/
@@ -270,6 +275,7 @@ attaches to the `p4n4-net` network that p4n4-iot creates). Shared values such as
 ```
 my-project/
 ├── .p4n4.json                       # Manifest (lists all active layers)
+├── .gitignore                       # Covers every layer's .env, credentials and models
 ├── iot/
 │   ├── docker-compose.yml
 │   ├── .env
@@ -282,9 +288,19 @@ my-project/
     └── scripts/ …
 ```
 
-`p4n4 up` / `down` operate on all stacks in dependency order (iot → ai → edge →
-dashboard; reversed for `down`), or on one stack via `p4n4 up ai`. `p4n4 logs` needs
+`p4n4 up` / `down` operate on all stacks in dependency order (iot → ai → extras →
+dashboard; reversed for `down`), or on one stack via `p4n4 up ai`. `p4n4 up` skips a
+stack with no service enabled (an extras layer before you add one). `p4n4 logs` needs
 `--stack <name>` (or `--no-follow`) in multi-layer projects.
+
+**Extras layer (`--layer extras`, never part of `all`):**
+
+```
+my-project/extras/
+├── .env                  # COMPOSE_PROFILES= (empty: nothing starts), every extra's settings
+├── docker-compose.yml    # include: one line per extra (none at first)
+└── _template/            # the skeleton extra: copy it to <name>/ (see the p4n4-extras README)
+```
 
 **Dashboard layer (`--layer dashboard`, included in `all`):**
 
@@ -313,11 +329,12 @@ p4n4 init <project-name> [options]
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--layer <name>` | Layers to enable: `iot`, `ai`, `edge`, `dashboard`, `all`, or comma-separated | `iot` |
+| `--layer <name>` | Layers to enable: `iot`, `ai`, `extras`, `dashboard`, `all` (every layer but `extras`; `all,extras` adds it), or comma-separated | `iot` |
+| `--ei-runner` / `--no-ei-runner` | Run the ai layer's edge inference runner (adds `ei-runner` to `COMPOSE_PROFILES`) | on with `all`, else off |
 | `--no-interactive` | Skip the wizard and use generated defaults | — |
 | `--source-iot <path>` | Local p4n4-iot checkout (skips git clone; useful offline) | — |
 | `--source-ai <path>` | Local p4n4-ai checkout (skips git clone; useful offline) | — |
-| `--source-edge <path>` | Local p4n4-edge checkout (skips git clone; useful offline) | — |
+| `--source-extras <path>` | Local p4n4-extras checkout (skips git clone; useful offline) | — |
 | `--source-dashboard <path>` | Local p4n4-dashboard checkout (skips git clone; useful offline) | — |
 | `--mqtt-remote <host[:port]>` | Bridge topics in from an external MQTT broker (needs the `iot` layer) | — |
 | `--mqtt-remote-user <name>` | Username on the external broker | — |
@@ -326,7 +343,7 @@ p4n4 init <project-name> [options]
 | `--mqtt-remote-tls` | Connect to the external broker over TLS (port 8883 by default) | off |
 | `--mqtt-remote-ca <file>` | CA certificate for that TLS connection, copied into the project | system CAs |
 
-The interactive wizard prompts for InfluxDB org, timezone, and admin passwords. When the `ai` layer is active it also prompts for Letta, n8n, and n8n encryption key values. All secrets default to randomly generated values if left blank.
+The interactive wizard prompts for InfluxDB org, timezone, and admin passwords. When the `ai` layer is active it also prompts for Letta, n8n, and n8n encryption key values, and whether to run the edge inference runner. All secrets default to randomly generated values if left blank.
 
 With the `iot` layer, the wizard also offers to pull topics from an external MQTT broker, the way `mosquitto_sub -h <host> -u <user> -P <password> -t <topic>` would. It asks for the host, credentials, topics, an optional local prefix (e.g. `remote/`) and TLS settings. The local broker then subscribes to those topics on the external one and republishes them locally, where Node-RED and the edge runner pick them up as usual. Nothing is published back. The settings land in the IoT `.env` as `MQTT_REMOTE_*` (see the [p4n4-iot README](https://github.com/raisga/p4n4-iot#external-mqtt-broker)).
 
@@ -363,7 +380,7 @@ p4n4 up [stack] [options]
 
 | Argument / flag | Description |
 |------|-------------|
-| `stack` | Start one stack only: `iot`, `ai`, `edge` or `dashboard` |
+| `stack` | Start one stack only: `iot`, `ai`, `extras` or `dashboard` |
 | `--build` | Rebuild images before starting |
 | `--pull` | Pull the latest images before starting |
 | `--no-detach` | Run in the foreground |
@@ -484,6 +501,24 @@ p4n4 validate
 
 ---
 
+### `p4n4 migrate`
+
+Move a legacy layer into the layer that replaced it. The only one is `edge`: p4n4-edge's inference runner is now the ai layer's `ei-runner` profile, and p4n4-edge became p4n4-extras.
+
+```bash
+p4n4 down edge
+p4n4 migrate edge [--source-ai <path>] [--yes]
+p4n4 validate && p4n4 up ai
+```
+
+- An edge layer that runs the inference runner moves into the **ai** layer: its service (spliced into `ai/docker-compose.yml`, which keeps its comments), `runner/`, the models in `edge-impulse/models/` and `onnx/models/`, and its `.env` values; `ei-runner` joins `COMPOSE_PROFILES`. A project without an ai layer gets one, scaffolded from p4n4-ai (or `--source-ai`) with only the runner enabled. A project left with one layer is flattened to the root, as `p4n4 init` lays it out.
+- An edge layer that runs other services (a template's own, such as video) becomes the **extras** layer, keeping its Compose project name so its volumes stay.
+- Nothing is deleted: what the move replaces stays in `edge.pre-migrate/` until you remove it. Keys both `.env` files set differently keep the ai layer's value and are listed.
+
+Until it's migrated, an `edge` layer keeps working, and every command prints a reminder.
+
+---
+
 ### `p4n4 add`
 
 Add a layer or service to an existing project.
@@ -522,7 +557,7 @@ p4n4 upgrade
 
 ### `p4n4 ei`
 
-Manage Edge Impulse model deployment and inference.
+Manage Edge Impulse model deployment and inference (the ai layer's `ei-runner` service).
 
 ```bash
 p4n4 ei deploy
@@ -553,7 +588,7 @@ p4n4 template apply <name>
 
 ## Layers
 
-P4N4 is organized into three composable layers.
+P4N4 is organized into two core layers, iot and ai, plus the dashboard and the optional extras.
 
 ### IoT — MING Stack
 
@@ -564,27 +599,28 @@ P4N4 is organized into three composable layers.
 | **Node-RED** | Flow engine for MQTT routing and pipeline logic |
 | **Grafana** | Real-time dashboarding and alerting |
 
-### Edge
-
-| Service | Role |
-|---------|------|
-| **Edge Impulse** | On-device ML inference; publishes results over MQTT |
-
-### Gen AI
+### AI
 
 | Service | Role | Starts by default |
 |---------|------|-------------------|
 | **Ollama** | Local LLM runtime for open-weight models | Yes |
 | **Letta** | Stateful AI agent framework with long-term memory | No |
 | **n8n** | Workflow automation bridging IoT and AI layers | No |
+| **System 1** | Fast typed decisions (laya), advisory | No |
+| **ei-runner** | Edge Impulse / ONNX inference on the sensor data; publishes results over MQTT | With `--layer all` or `--ei-runner` |
 
 Every service sits in a Compose profile of its own name, and `COMPOSE_PROFILES` in the
 layer's `.env` lists the ones that start. `p4n4 init` writes the stack's default
-(`COMPOSE_PROFILES=ollama`) and still generates Letta's and n8n's secrets. To run them, set
+(`COMPOSE_PROFILES=ollama`, plus `ei-runner` with `--layer all` or `--ei-runner`) and still
+generates Letta's and n8n's secrets. To run them, set
 `COMPOSE_PROFILES=ollama,letta,n8n` in `ai/.env` (`.env` in a single-layer project) and run
 `p4n4 up ai`.
 
-All three stacks communicate over a shared `p4n4-net` Docker bridge network owned by `p4n4-iot`. The CLI handles network creation and stack ordering automatically.
+### Extras (optional)
+
+Services outside the core, from [p4n4-extras](https://github.com/raisga/p4n4-extras): none starts until its layer's `COMPOSE_PROFILES` lists it, and no core service depends on one. Add the layer by name (`--layer iot,ai,extras` or `--layer all,extras`).
+
+All stacks communicate over a shared `p4n4-net` Docker bridge network owned by `p4n4-iot`. The CLI handles network creation and stack ordering automatically.
 
 ---
 
@@ -649,20 +685,20 @@ INFLUXDB_BUCKET=raw_telemetry
 | n8n                  | `5678`                            | ai    |
 | Letta                | `8283`                            | ai    |
 | Ollama               | `11434`                           | ai    |
-| Edge Impulse Runner  | `8080` (health endpoint)          | edge  |
+| Edge Impulse Runner  | `8080` (health endpoint)          | ai (`ei-runner` profile) |
 | **p4n4 REST API**    | **`8000`**                        | **api** |
 
 ---
 
 ## Source Repos
 
-Stack files are fetched from these repos at `p4n4 init` time. URLs are defined in `p4n4_lib/sources.yaml` (shipped with [`p4n4-lib`](https://github.com/raisga/p4n4-lib)) and can be overridden per-layer via `--source-iot` / `--source-ai` / `--source-edge`, or by editing the file to point at a fork or mirror.
+Stack files are fetched from these repos at `p4n4 init` time. URLs are defined in `p4n4_lib/sources.yaml` (shipped with [`p4n4-lib`](https://github.com/raisga/p4n4-lib)) and can be overridden per-layer via `--source-iot` / `--source-ai` / `--source-extras`, or by editing the file to point at a fork or mirror.
 
 | Layer     | Repo |
 |-----------|------|
 | IoT       | https://github.com/raisga/p4n4-iot |
 | AI        | https://github.com/raisga/p4n4-ai |
-| Edge      | https://github.com/raisga/p4n4-edge |
+| Extras    | https://github.com/raisga/p4n4-extras |
 | Templates | https://github.com/raisga/p4n4-templates |
 
 ---
@@ -672,8 +708,8 @@ Stack files are fetched from these repos at `p4n4 init` time. URLs are defined i
 - [p4n4.com](https://p4n4.com) — Platform overview
 - [Full documentation](https://raisga.github.io/p4n4-docs) — MkDocs reference site
 - [p4n4-iot](https://github.com/raisga/p4n4-iot) — MING stack source
-- [p4n4-ai](https://github.com/raisga/p4n4-ai) — GenAI stack source
-- [p4n4-edge](https://github.com/raisga/p4n4-edge) — Edge AI stack source
+- [p4n4-ai](https://github.com/raisga/p4n4-ai) — AI stack source (GenAI and the Edge Impulse / ONNX runner)
+- [p4n4-extras](https://github.com/raisga/p4n4-extras) — optional services (formerly p4n4-edge)
 - [p4n4-templates](https://github.com/raisga/p4n4-templates) — Community template registry
 - [MING Stack Tutorial](https://github.com/ArthurKretzer/tutorial-p4n4-stack) — IIoT data stack tutorial (XIV SBESC, 2024)
 - [MING Stack with Edge Impulse](https://www.edgeimpulse.com/blog/accelerate-edge-ai-application-development-with-the-p4n4-stack-edge-impulse/) — Integration guide
