@@ -9,6 +9,18 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-17
+
+Requires p4n4-lib 0.4.1.
+
+### Fixed
+
+- `p4n4 up`, `p4n4 ai system1 enable` and the n8n credential sync create `p4n4-net` on the
+  project's `P4N4_SUBNET` instead of always on `172.20.0.0/16`. Where another network
+  held that range (a VPN's, or another Compose project's), they failed with "Could not
+  create the p4n4-net network" even with `P4N4_SUBNET` set. When the range is taken, the
+  error now says to set `P4N4_SUBNET` (p4n4-lib 0.4.1's `layout.network_subnet`).
+
 ## [0.4.0] - 2026-10-16
 
 The edge layer merged into the ai layer, and p4n4-edge became p4n4-extras. Requires
@@ -275,7 +287,8 @@ p4n4-lib 0.4.0.
 - CI matrix across Python 3.11, 3.12, 3.13
 - PyPI publishing workflow via Trusted Publisher
 
-[Unreleased]: https://github.com/raisga/p4n4-cli/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/raisga/p4n4-cli/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/raisga/p4n4-cli/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/raisga/p4n4-cli/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/raisga/p4n4-cli/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/raisga/p4n4-cli/compare/v0.2.0...v0.2.1

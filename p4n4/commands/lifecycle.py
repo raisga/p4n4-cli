@@ -16,7 +16,7 @@ from p4n4_lib import manifest as mf
 from rich.console import Console
 from rich.table import Table
 
-from p4n4.project import require_compose_dirs
+from p4n4.project import network_subnet, require_compose_dirs
 
 console = Console()
 
@@ -163,7 +163,7 @@ def up(
                 # a p4n4-net made by `docker network create` lacks Compose's label and
                 # stops iot with "incorrect label"; ensure_network recreates it with the
                 # label while no container uses it.
-                if compose.ensure_network(layout.NETWORK, layout.NETWORK_SUBNET):
+                if compose.ensure_network(layout.NETWORK, network_subnet()):
                     console.print(f"[dim]Created the {layout.NETWORK} network.[/dim]")
                 rc = compose.up(cwd, build=build, pull=pull, detach=not no_detach)
             if rc != 0:

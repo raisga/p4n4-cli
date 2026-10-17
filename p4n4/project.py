@@ -36,6 +36,15 @@ def require_manifest() -> Path:
     return manifest_path
 
 
+def network_subnet(start: Path | None = None) -> str:
+    """The subnet p4n4-net is created with: P4N4_SUBNET of the project holding `start`
+    (default cwd), else the default."""
+    manifest_path = mf.find(start)
+    if manifest_path is None:
+        return layout.NETWORK_SUBNET
+    return layout.network_subnet(manifest_path.parent, mf.load(manifest_path).get("layers", []))
+
+
 def require_compose_dirs(stack: str | None = None) -> list[tuple[str, Path]]:
     """
     Return (layer, directory) pairs holding this project's compose files, in

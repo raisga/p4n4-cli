@@ -20,7 +20,7 @@ from p4n4_lib.layers import LAYERS
 from rich.console import Console
 from rich.table import Table
 
-from p4n4.project import require_compose_dirs
+from p4n4.project import network_subnet, require_compose_dirs
 
 app = typer.Typer(help="Manage the GenAI stack.", no_args_is_help=True)
 system1_app = typer.Typer(
@@ -174,7 +174,7 @@ def sync_n8n_credentials(ai_dir: Path, values: dict[str, str]) -> str:
     else:
         # A one-off n8n container joins p4n4-net like the service does
         try:
-            compose.ensure_network(layout.NETWORK, layout.NETWORK_SUBNET)
+            compose.ensure_network(layout.NETWORK, network_subnet(ai_dir))
         except compose.DockerError as exc:
             return f"failed: {exc}"
         args = ["run", "--rm", "--no-deps", "-T", "--entrypoint", "sh", "n8n", "-c", script]
@@ -311,7 +311,7 @@ def enable(
 
     _pull(ai_dir)
     try:
-        compose.ensure_network(layout.NETWORK, layout.NETWORK_SUBNET)
+        compose.ensure_network(layout.NETWORK, network_subnet())
     except compose.DockerError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc

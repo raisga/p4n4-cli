@@ -788,6 +788,32 @@ def test_up_creates_the_network_for_stacks_that_join_it(tmp_path, monkeypatch):
     assert events == ["p4n4-net", "iot"]
 
 
+def test_up_creates_the_network_on_the_projects_subnet(tmp_path, monkeypatch):
+    from p4n4_lib import compose
+
+    from p4n4.commands import lifecycle
+
+    for layer in ("iot", "ai"):
+        (tmp_path / layer).mkdir()
+        (tmp_path / layer / "docker-compose.yml").write_text("services: {}\n")
+    (tmp_path / "iot" / ".env").write_text("P4N4_SUBNET=172.28.0.0/16\n")
+    (tmp_path / ".p4n4.json").write_text(
+        json.dumps({"schema_version": 1, "project": "demo", "layers": ["iot", "ai"]})
+    )
+    subnets = []
+    monkeypatch.setattr(compose, "enabled_services", lambda cwd: ["svc"])
+    monkeypatch.setattr(compose, "name_conflicts", lambda *dirs: [])
+    monkeypatch.setattr(
+        lifecycle.compose, "ensure_network", lambda name, subnet: subnets.append(subnet)
+    )
+    monkeypatch.setattr(lifecycle.compose, "up", lambda cwd, **kw: 0)
+
+    # ai alone too: p4n4-iot, which reads P4N4_SUBNET, may not have made it yet
+    result = _run_in(tmp_path, ["up", "ai"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert subnets == ["172.28.0.0/16"]
+
+
 def _emu_project(tmp_path, monkeypatch, layers=("iot", "ai")):
     """A multi-layer project with p4n4-emu on PATH and its calls recorded."""
     from p4n4_lib import compose

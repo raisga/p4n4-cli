@@ -311,7 +311,7 @@ wheels = [
 
 [[package]]
 name = "p4n4"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
@@ -331,7 +331,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jinja2", specifier = ">=3" },
-    { name = "p4n4-lib", specifier = ">=0.4.0" },
+    { name = "p4n4-lib", specifier = ">=0.4.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
     { name = "questionary", specifier = ">=2" },
@@ -343,14 +343,14 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "p4n4-lib"
-version = "0.4.0"
+version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/15/46/d86fec97b01484cf9a58a3918cd2c76e9e7f91703cbd7e3e0aecd0452114/p4n4_lib-0.4.0.tar.gz", hash = "sha256:b8a144147267a53d5b70f4697b04e9d5b3ed5bbdb8da9b045a119fe1c2f86744", size = 85865, upload-time = "2026-10-16T21:02:25.153Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ac/1c/dee687a6f94b201936fe7aa5ea694bdb2966e1eeed1a1739aa3315b05356/p4n4_lib-0.4.1.tar.gz", hash = "sha256:00c311e4da42df0abf33e29642c8d4607544cbbc8846980e541559a41e8fc45f", size = 87063, upload-time = "2026-10-17T04:53:44.305Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b9/8f/021f7d0b8170361b0944ebbf7f16bf8a00d0aad3350daff98ae3cc66721e/p4n4_lib-0.4.0-py3-none-any.whl", hash = "sha256:d68ec339e07f5213256437e8d41ac447d58c1451890b08633508bef390fde3a7", size = 38902, upload-time = "2026-10-16T21:02:23.784Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/8b/6e7c30f3720a96ea24b90197f45db3a558d44a873a767a89e597c439d2dd/p4n4_lib-0.4.1-py3-none-any.whl", hash = "sha256:ada7c83221d528965c2f56f24d03e73f7e64dbb6e306bbb6e73c59e30b0206a8", size = 39278, upload-time = "2026-10-17T04:53:42.916Z" },
 ]
 
 [[package]]
