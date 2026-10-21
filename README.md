@@ -477,7 +477,7 @@ p4n4 logs influxdb --tail 50 --no-follow
 Rotate secrets in `.env` with new randomly generated values. Prompts for confirmation before writing. Rotates whichever of the following keys are present, which their services read at every start:
 
 - **IoT layer:** `NODE_RED_PASSWORD`
-- **AI layer:** `LETTA_SERVER_PASSWORD`
+- **AI layer:** `LETTA_SERVER_PASSWORD`, `AGENT_API_TOKEN` (the incident investigator's status API)
 
 It doesn't rotate `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN`, `GRAFANA_PASSWORD` or `N8N_ENCRYPTION_KEY`, and says so. Their services keep the value from their first setup, so a new value in `.env` alone would lock every client out of InfluxDB and Grafana, and stop n8n from starting. Change those in the service itself (the [Security guide](https://github.com/raisga/p4n4-docs/blob/main/guides/security.md#secret-rotation) explains how). `p4n4 secret show` lists all of them, masked.
 
@@ -659,6 +659,9 @@ NODE_RED_PASSWORD=<generated>
 ```bash
 # Letta
 LETTA_SERVER_PASSWORD=<generated>
+
+# Incident investigator status API (agent profile)
+AGENT_API_TOKEN=<generated>
 
 # n8n
 N8N_BASIC_AUTH_USER=admin

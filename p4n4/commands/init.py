@@ -421,6 +421,8 @@ def cmd(
         "SYSTEM1_API_KEY": system1_key,
         "OPERATOR_INTAKE_TOKEN": secretutil.token(),
         "SYSTEM1_ALERT_TOKEN": system1_alert_token,
+        # Generated now so adding the agent profile needs no new secret later
+        "AGENT_API_TOKEN": secretutil.token(),
         # Shared InfluxDB values (must match p4n4-iot when used alongside it)
         "INFLUXDB_TOKEN": influx_token,
         "INFLUXDB_ORG": org,

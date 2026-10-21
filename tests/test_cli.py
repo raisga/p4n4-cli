@@ -372,6 +372,8 @@ def test_init_ai_starts_only_ollama_by_default():
         env = envutil.load(Path("proj/ai/.env"))
         assert env["N8N_ENCRYPTION_KEY"] != "change-me-32-char-encryption-key"
         assert env["LETTA_SERVER_PASSWORD"] != "lettapassword"
+        # So is the incident investigator's, for the agent profile
+        assert len(env["AGENT_API_TOKEN"]) == 64
         assert "ai/.env" in result.output
         assert "COMPOSE_PROFILES=ollama,letta,n8n" in result.output
 
