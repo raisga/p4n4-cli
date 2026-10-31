@@ -9,6 +9,17 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-29
+
+Requires p4n4-lib 0.4.2.
+
+### Added
+
+- `p4n4 init` generates `AGENT_API_TOKEN` in the ai layer's `.env`, the bearer token of
+  the incident investigator's status API (p4n4-ai's `agent` profile), so enabling the
+  profile later needs no new secret. `p4n4 secret rotate` rotates it, and `p4n4 validate`
+  reports it and `AGENT_MODEL` missing while the profile is enabled (p4n4-lib 0.4.2).
+
 ## [0.4.1] - 2026-10-17
 
 Requires p4n4-lib 0.4.1.
@@ -287,7 +298,8 @@ p4n4-lib 0.4.0.
 - CI matrix across Python 3.11, 3.12, 3.13
 - PyPI publishing workflow via Trusted Publisher
 
-[Unreleased]: https://github.com/raisga/p4n4-cli/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/raisga/p4n4-cli/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/raisga/p4n4-cli/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/raisga/p4n4-cli/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/raisga/p4n4-cli/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/raisga/p4n4-cli/compare/v0.2.1...v0.3.0
