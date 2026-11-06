@@ -380,9 +380,15 @@ def cmd(
     # and by Grafana's drift alerts (iot) and n8n's credential for them (ai)
     system1_key = secretutil.token()
     system1_alert_token = secretutil.token()
+    mqtt_password = secretutil.token()
+    mqtt_readonly_password = secretutil.token()
 
     iot_env_values: dict[str, str] = {
         "TZ": tz,
+        "MQTT_USER": "p4n4",
+        "MQTT_PASSWORD": mqtt_password,
+        "MQTT_READONLY_USER": "p4n4-readonly",
+        "MQTT_READONLY_PASSWORD": mqtt_readonly_password,
         "INFLUXDB_USERNAME": "admin",
         "INFLUXDB_PASSWORD": influx_password,
         "INFLUXDB_ORG": org,
@@ -429,6 +435,7 @@ def cmd(
         "INFLUXDB_BUCKET": "raw_telemetry",
         # Where the inference runner writes its results
         "INFLUXDB_BUCKET_AI_EVENTS": "ai_events",
+        **({"MQTT_USER": "p4n4", "MQTT_PASSWORD": mqtt_password} if "iot" in layers else {}),
     }
 
     # Nothing in extras starts by default; it has no secrets of its own
@@ -476,6 +483,15 @@ def cmd(
             f"\n  [dim]Bridging[/dim] {mqtt_remote_env['MQTT_REMOTE_TOPICS']} "
             f"[dim]from[/dim] {mqtt_remote_env['MQTT_REMOTE_HOST']} "
             "[dim](MQTT_REMOTE_* in the IoT .env)[/dim]"
+        )
+
+    if "iot" in layers:
+        iot_env = (layout.layer_dir(project_dir, layers, "iot") / ".env").relative_to(project_dir)
+        console.print(
+            "\n  [dim]MQTT devices must log in. Credentials are in[/dim] "
+            f"{iot_env.as_posix()}[dim]: MQTT_USER / MQTT_PASSWORD (publish and read), "
+            "MQTT_READONLY_USER / MQTT_READONLY_PASSWORD (read only). "
+            "The Docker-only listener stays anonymous.[/dim]"
         )
 
     if "ai" in layers:

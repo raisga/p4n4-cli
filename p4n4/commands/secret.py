@@ -64,6 +64,8 @@ def rotate() -> None:
     """Re-generate the secrets in .env that services pick up at their next start."""
     files = _require_env_files()
     envs = [(name, path, envutil.load(path)) for name, path in files]
+    broker_keys = {"MQTT_PASSWORD": "MQTT_USER", "MQTT_READONLY_PASSWORD": "MQTT_READONLY_USER"}
+    broker_env = next((env for name, _, env in envs if name == "iot"), {})
 
     # Services keep these from their first setup: a new value in .env alone
     # would lock clients out (InfluxDB, Grafana) or stop n8n from starting
@@ -81,6 +83,7 @@ def rotate() -> None:
         key: secretutil.rotation_value(key)
         for key in secretutil.ROTATABLE_KEYS
         if any(key in env for _, _, env in envs)
+        and (key not in broker_keys or broker_env.get(key))
     }
 
     if not new_values:
@@ -99,9 +102,22 @@ def rotate() -> None:
         raise typer.Abort()
 
     # Key by key, so the file keeps its comments and layout
-    for _name, path, env in envs:
+    for name, path, env in envs:
         for key, value in new_values.items():
             if key in env:
+                if key in broker_keys and (
+                    env[key] != broker_env[key]
+                    or env.get(broker_keys[key]) != broker_env.get(broker_keys[key])
+                    or (
+                        name != "iot"
+                        and (env.get("MQTT_HOST") or "p4n4-mqtt") not in {"mqtt", "p4n4-mqtt"}
+                    )
+                ):
+                    console.print(
+                        f"[dim]Not rotating {key} in {path}: the connection does not match "
+                        "the local broker's credentials.[/dim]"
+                    )
+                    continue
                 envutil.set_value(path, key, value)
 
     console.print("\n[green]✓[/green] Secrets rotated in [bold].env[/bold]")

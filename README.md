@@ -345,6 +345,12 @@ p4n4 init <project-name> [options]
 
 The interactive wizard prompts for InfluxDB org, timezone, and admin passwords. When the `ai` layer is active it also prompts for Letta, n8n, and n8n encryption key values, and whether to run the edge inference runner. All secrets default to randomly generated values if left blank.
 
+New IoT projects also get device logins automatically: `MQTT_USER` / `MQTT_PASSWORD`
+for publishing and reading, and `MQTT_READONLY_USER` / `MQTT_READONLY_PASSWORD` for
+read-only tools. Find them in the IoT `.env`; devices and MQTTX Web must use them.
+The Docker-only listener stays anonymous for the stack's services. Rotation changes
+the local broker's passwords and matching AI settings; update device passwords too.
+
 With the `iot` layer, the wizard also offers to pull topics from an external MQTT broker, the way `mosquitto_sub -h <host> -u <user> -P <password> -t <topic>` would. It asks for the host, credentials, topics, an optional local prefix (e.g. `remote/`) and TLS settings. The local broker then subscribes to those topics on the external one and republishes them locally, where Node-RED and the edge runner pick them up as usual. Nothing is published back. The settings land in the IoT `.env` as `MQTT_REMOTE_*` (see the [p4n4-iot README](https://github.com/raisga/p4n4-iot#external-mqtt-broker)).
 
 ```bash
@@ -476,16 +482,20 @@ p4n4 logs influxdb --tail 50 --no-follow
 
 Rotate secrets in `.env` with new randomly generated values. Prompts for confirmation before writing. Rotates whichever of the following keys are present, which their services read at every start:
 
-- **IoT layer:** `NODE_RED_PASSWORD`
+- **IoT layer:** `NODE_RED_PASSWORD`, `MQTT_PASSWORD`, `MQTT_READONLY_PASSWORD`
 - **AI layer:** `LETTA_SERVER_PASSWORD`, `AGENT_API_TOKEN` (the incident investigator's status API)
 
 It doesn't rotate `INFLUXDB_PASSWORD`, `INFLUXDB_TOKEN`, `GRAFANA_PASSWORD` or `N8N_ENCRYPTION_KEY`, and says so. Their services keep the value from their first setup, so a new value in `.env` alone would lock every client out of InfluxDB and Grafana, and stop n8n from starting. Change those in the service itself (the [Security guide](https://github.com/raisga/p4n4-docs/blob/main/guides/security.md#secret-rotation) explains how). `p4n4 secret show` lists all of them, masked.
 
 ```bash
-p4n4 secret
+p4n4 secret rotate
 ```
 
 Run `p4n4 down && p4n4 up` after rotating secrets to apply them.
+
+MQTT passwords rotate only for a configured local IoT broker and matching AI
+connections (`MQTT_HOST=mqtt` or `p4n4-mqtt`). Different usernames, passwords or
+external hosts are preserved. Update device and dashboard logins after rotation.
 
 `p4n4 secret show` also lists `MQTT_REMOTE_PASSWORD` when an external broker is configured, fully masked. Rotation never touches it: the external broker issued it, so a new value would stop the bridge from logging in.
 

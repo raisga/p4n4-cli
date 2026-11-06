@@ -229,6 +229,19 @@ def test_init_iot_generates_node_red_password(iot_project):
     assert len(env["NODE_RED_PASSWORD"]) >= 24
 
 
+def test_init_generates_distinct_mqtt_device_credentials(iot_project):
+    env = envutil.load(iot_project / ".env")
+    assert env["MQTT_USER"] != env["MQTT_READONLY_USER"]
+    assert len(env["MQTT_PASSWORD"]) >= 64
+    assert len(env["MQTT_READONLY_PASSWORD"]) >= 64
+    assert env["MQTT_PASSWORD"] != env["MQTT_READONLY_PASSWORD"]
+    shown = _run_in(iot_project, ["secret", "show"])
+    assert shown.exit_code == 0, shown.output
+    assert "MQTT_READONLY_PASSWORD" in shown.output
+    assert env["MQTT_PASSWORD"] not in shown.output
+    assert env["MQTT_READONLY_PASSWORD"] not in shown.output
+
+
 def test_init_iot_scripts_are_executable(iot_project):
     for script in (iot_project / "scripts").glob("*.sh"):
         assert script.stat().st_mode & stat.S_IXUSR, f"Not executable: {script.name}"
@@ -465,6 +478,45 @@ def test_init_multi_layer_shares_influxdb_values(multi_project):
     ai_env = envutil.load(multi_project / "ai" / ".env")
     assert iot_env["INFLUXDB_TOKEN"] == ai_env["INFLUXDB_TOKEN"]
     assert iot_env["INFLUXDB_ORG"] == ai_env["INFLUXDB_ORG"]
+
+
+def test_mqtt_rotation_keeps_local_clients_in_sync(multi_project, monkeypatch):
+    monkeypatch.setattr("p4n4.commands.ai.sync_n8n_credentials", lambda *_: "updated (test)")
+    before = envutil.load(multi_project / "iot" / ".env")
+    ai_env = envutil.load(multi_project / "ai" / ".env")
+    assert ai_env["MQTT_USER"] == before["MQTT_USER"]
+    assert ai_env["MQTT_PASSWORD"] == before["MQTT_PASSWORD"]
+    result = _run_in(multi_project, ["secret", "rotate"], input="y\n", catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    after = envutil.load(multi_project / "iot" / ".env")
+    ai_env = envutil.load(multi_project / "ai" / ".env")
+    assert after["MQTT_PASSWORD"] != before["MQTT_PASSWORD"]
+    assert after["MQTT_READONLY_PASSWORD"] != before["MQTT_READONLY_PASSWORD"]
+    assert ai_env["MQTT_PASSWORD"] == after["MQTT_PASSWORD"]
+
+
+@pytest.mark.parametrize("with_local_broker", [False, True])
+@pytest.mark.parametrize("key,value", [
+    ("MQTT_USER", "external"),
+    ("MQTT_PASSWORD", "externally-issued-password"),
+    ("MQTT_HOST", "external.example"),
+])
+def test_mqtt_rotation_preserves_nonlocal_broker_credentials(
+    ai_project, multi_project, with_local_broker, key, value, monkeypatch
+):
+    monkeypatch.setattr("p4n4.commands.ai.sync_n8n_credentials", lambda *_: "updated (test)")
+    project = multi_project if with_local_broker else ai_project
+    ai_dir = project / "ai" if with_local_broker else project
+    broker_env = envutil.load(multi_project / "iot" / ".env")
+    for credential in ("MQTT_USER", "MQTT_PASSWORD"):
+        envutil.set_value(ai_dir / ".env", credential, broker_env[credential])
+    envutil.set_value(ai_dir / ".env", key, value)
+    password = envutil.load(ai_dir / ".env")["MQTT_PASSWORD"]
+    result = _run_in(project, ["secret", "rotate"], input="y\n", catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert envutil.load(ai_dir / ".env")["MQTT_PASSWORD"] == password
+    if with_local_broker:
+        assert "Not rotating MQTT_PASSWORD" in result.output
 
 
 def test_validate_passes_on_multi_layer_project(multi_project):
